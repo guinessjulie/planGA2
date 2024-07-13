@@ -1,3 +1,4 @@
+import numpy as np
 from datetime import datetime
 
 def get_month_day_4_digit():
@@ -80,7 +81,7 @@ def create_filename_in_order(ext='txt', prefix=None, postfix_number=0):
     path = create_folder_by_datetime() # todo to test
     postfix_number += 1
     postfix = str(postfix_number)
-    full_path = create_filename(path,'Step', postfix, '', 'png') #todo to test
+    full_path = create_filename(path, prefix, postfix, '', 'png') #todo to test
     print(f'full_path = {full_path}')
     return full_path, postfix_number
 
@@ -93,3 +94,7 @@ def unique_elements_2d_array(arr_2d):
             unique_elements.add(element)
 
     return list(unique_elements)
+
+
+
+

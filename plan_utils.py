@@ -1,5 +1,6 @@
 from PIL import Image, ImageDraw
 import constants
+import numpy as np
 
 
 ####################################################################################
@@ -74,6 +75,30 @@ def grid_to_coordinates(grid):
                 coordinates.append((x, y))
 
     return coordinates
+
+
+def expand_grid(grid, scale=2):
+    """
+    Expand the given grid by the specified scale factor.
+    Each cell in the original grid is expanded to a scale x scale block in the new grid.
+
+    Parameters:
+    grid (list of list of int): The input grid to expand.
+    scale (int): The scale factor to expand each cell by. Default is 2.
+
+    Returns:
+    list of list of int: The expanded grid.
+    """
+    m, n = len(grid), len(grid[0])
+    expanded_grid = np.zeros((m * scale, n * scale), dtype=int)
+
+    for i in range(m):
+        for j in range(n):
+            for k in range(scale):
+                for l in range(scale):
+                    expanded_grid[i * scale + k][j * scale + l] = grid[i][j]
+
+    return expanded_grid.tolist()
 
 
 ####################### control  / test functiion ####################

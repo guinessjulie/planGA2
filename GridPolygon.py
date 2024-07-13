@@ -151,8 +151,7 @@ class GridPolygon:
         outer_corners = [corner for corner, count in corner_count.items() if count ==1 or count ==3]
         print(f'[get_polygon_corners] Room{room_number} outer_corners = {outer_corners}')
         corners = self.sort_and_remove_collinear(outer_corners)
-        if room_number > 4:
-             sys.exit(1)
+
         return corners
 
     def sort_corners_clockwise(self, corners):

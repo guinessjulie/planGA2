@@ -1,18 +1,23 @@
 # This is a sample Python script.
+import sys
 
 # Press Ctrl+F5 to execute it or replace it with your code.
 # Press Double Shift to search everywhere for classes, files, tool windows, actions, and settings.
 import file_trans
 import planB
-import plan_utils
+from plan_utils import grid_to_coordinates, expand_grid
 import trivial_utils
 from GraphClass import GridGraph, GraphDrawer, GraphBuilder
 from GridDrawer import GridDrawer
+from GridPolygon import GridPolygon
+from PolygonExporter import PolygonExporter
 from measure import categorize_boundary_cells
-from plan import create_floorplan, place_room
+from plan import create_floorplan
+
 from trivial_utils import create_filename_with_datetime
 import constants
 import numpy as np
+
 
 def run_util(): #TODO to connect all the main utils
     file_trans.gui_main()
@@ -37,7 +42,8 @@ def run_build_floorplan():
     return floorshape
 
 def exit_module(param1= None, param2=None):
-    return
+    sys.exit(1)
+
 
 
 def choose_colord_grid():
@@ -64,7 +70,7 @@ def draw_plan_base_grid(grid):
     print('Draw Plan')
     # todo choose grid or load fromm  last years project
     # coords = plan_utils.grid_to_coordinates(constants.floor_grid )
-    coords = plan_utils.grid_to_coordinates(grid )
+    coords = grid_to_coordinates(grid )
 
     path = trivial_utils.create_folder_by_datetime() # todo test
     full_path = trivial_utils.create_filename(path,'Grid', '', '', 'png')
@@ -79,10 +85,22 @@ def draw_plan_base_grid(grid):
 
 def get_floorplan():
     grid = constants.floor_grid
+    grid = expand_grid(grid)
     draw_plan_base_grid(grid)
     nrows,ncols,k=len(grid), len(grid[0]), 5
     floorplan = create_floorplan(grid, k)
     return floorplan
+
+def build_polygon(floorplan):
+
+    grid_polygon = GridPolygon(floorplan, min_area=2000000, min_length=2000)
+    polygon_exporter = PolygonExporter(grid_polygon.cell_size, grid_polygon.padded_grid.shape, padding_size=1000)
+
+    suffix = 'before'
+    room_polygons = grid_polygon.get_all_room_polygons()
+    polygon_exporter.save_polygon_to_png(room_polygons, f"room_polygons_{suffix}.png")
+
+
 
 def test_main():
     floorplan = get_floorplan()
@@ -92,8 +110,6 @@ def test_main():
     print(full_path)
 
 
-    #GridDrawer.plot_colored_grid(floorplan,gridname)
-    #GridDrawer.color_cells_by_value(floorplan, gridname)
     GridDrawer.color_cells_by_value(floorplan, full_path)
     GridDrawer.draw_plan_equal_thickness(floorplan)
     GridDrawer.draw_plan_padded(floorplan)
@@ -108,6 +124,13 @@ def test_main():
         "9": exit_module
     }
     graph = run_selected_module(build_modules, floorplan)
+
+    polygon_module = {
+        "1" : build_polygon,
+        "9" : exit_module
+    }
+
+    run_selected_module(polygon_module, floorplan)
 
     draw_modules = {
         "1": GraphDrawer.draw_graph,

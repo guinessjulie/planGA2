@@ -3,7 +3,7 @@ import sys
 
 from scipy.sparse import lil_matrix
 import trivial_utils
-
+import numpy as np
 import plan_utils
 from GridDrawer import GridDrawer
 from measure import categorize_boundary_cells
@@ -12,20 +12,21 @@ from config_reader import read_constraint
 # todo 1: 사이즈 작은 사이즈일 수록 빈 인접셀 적다. 이를 이용해서 초기화에 활용
 # todo 2: 인접 리스트를 만들어서 해당 조건 만족하도록
 # todo 3: 사이즈 contstraint를 이용하여 초기 셀 설정 시 적용. 예:  living room 크기가 bathroom 크기의 2배 이상인 경우, 인접 셀 두 개를 초기 셀에 할당
-# todo 4: 방향 constraint를 이용하여 초기 셀 설정시 적용 가장 남쪽에 있는 셀이 Livingroom 북쪽에 있는 셀은 부엌 및 bathroom
-# todo 5: 인접조건 neighbor 갯수가 가장 많은 것을 living room으로?
+# todo 4: 방향 constraint를 이용하여 초기 셀 설정시 적용 가장 남쪽에 있는 셀이 Livingroom 북쪽에 있는 셀은 부엌 및 bathroom => done
+# todo 5: 인접조건 neighbor 갯수가 가장 많은 것을 living room으로? 그래프 구조 활용
 # todo 6: Graph의 구조가 같은지를 체크할 수 있도록 GraphGrid에 equality function들을 만들었다. 이를 활용해서 인접성 리스트를 optimize 하자
 
 
 def create_floorplan(empty_grid, k):
     orientation_requirements=read_constraint('constraints.ini', 'OrientationRequirements')
-    initialized_grid, initial_cells = place_k_colors_on_grid(to_np_array(empty_grid), k, orientation_requirements)
+    initialized_grid, initial_cells = place_k_rooms_on_grid(to_np_array(empty_grid), k)
+    initialized_grid, cells_coords = relocate_by_orientation(initialized_grid, initial_cells, orientation_requirements)
     print(f'initialized_grid={initialized_grid}')
-    sys.exit(1)
     path = trivial_utils.create_folder_by_datetime()
     full_path = trivial_utils.create_filename(path, 'Init', '', '', 'png')
     GridDrawer.color_cells_by_value(initialized_grid, full_path)
     print(f'initial_cells:{initial_cells}\n{initialized_grid}')
+    # floorplan = place_room(initialized_grid, initial_cells)
     floorplan = place_room(initialized_grid, initial_cells)
     return floorplan
 
@@ -40,7 +41,7 @@ def check_valid_current_cell(grid_assigning, cell):
 
 def all_active_neighbors(cell, floorplan):
     directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
-    row, col = cell[0], cell[1]
+    row, col = cell
     adjs = set()
     for dx, dy in directions:
         new_row, new_col = row + dy, col + dx
@@ -48,6 +49,7 @@ def all_active_neighbors(cell, floorplan):
             if floorplan[new_row, new_col] > 0:  # 빈 셀은 할 필요가 없을 듯
                 adjs.add((new_row, new_col))
     return adjs
+
 
 
 # 빈 이웃이 하나라도 있으면 그 이웃을 valid_neighbor_set에 추가해서 이를 리턴한다.
@@ -87,7 +89,7 @@ def get_unique_values(floorplan, cells):
         unique_values.add(floorplan[cell])
     return unique_values
 
-
+# commit된 것 복원
 def place_room(floorplan, obtainable_cells):
     insulated_cells = set()
     valid_obtainable_cells = process_valid_cells(floorplan, insulated_cells, range(floorplan.shape[0]))
@@ -140,40 +142,356 @@ def place_room(floorplan, obtainable_cells):
         valid_obtainable_cells = active_cells.copy()
     print(f'----')
     print(f'insulated_cells={insulated_cells}: total {len(insulated_cells)}')
+
+    floorplan = exchange_extreme_cells(floorplan)
+    filename, current_step = trivial_utils.create_filename_in_order('png', 'Reform', current_step)
+    GridDrawer.color_cells_by_value(floorplan, filename)
+
     return floorplan
 
 
-def relocate_by_orientation(coloring_grid, cells_coords):
-    return coloring_grid, cells_coords
+
+# chatGPT가 고쳐준 것
+def place_room2(floorplan, obtainable_cells):
+    insulated_cells = set()
+    valid_obtainable_cells = process_valid_cells(floorplan, insulated_cells, range(floorplan.shape[0]))
+    insulated_cells = set(obtainable_cells) - valid_obtainable_cells
+    current_step = 0
+
+    while valid_obtainable_cells:
+        num_unique_value = len(get_unique_values(floorplan, valid_obtainable_cells))
+        if num_unique_value > 1:
+            updated_cells = set()
+            for cell in valid_obtainable_cells:
+                if cell in updated_cells:
+                    continue
+                new_cell = choose_new_adjacent_cell(floorplan, cell)
+                print(f'cell =  {cell}, new_cell = {new_cell}')
+
+                # 유효성 검사 통합
+                is_cell_valid = check_valid_current_cell(floorplan, cell)
+                is_new_cell_valid = check_valid_current_cell(floorplan, new_cell)
+
+                if not is_cell_valid:
+                    insulated_cells.add(cell)
+                if is_new_cell_valid:
+                    updated_cells.add(new_cell)
+                else:
+                    insulated_cells.add(new_cell)
+
+                # 인접 셀 유효성 검사
+                for adj_cell in all_active_neighbors(new_cell, floorplan):
+                    if adj_cell in valid_obtainable_cells and not check_valid_current_cell(floorplan, adj_cell):
+                        insulated_cells.add(adj_cell)
+
+            valid_obtainable_cells = updated_cells.copy()
+            print(f'active_cells:{valid_obtainable_cells}:{len(valid_obtainable_cells)}')
+
+        elif num_unique_value == 1:
+            unique_value = floorplan[valid_obtainable_cells.pop()]
+            floorplan[floorplan == 0] = unique_value
+            valid_obtainable_cells = set()
+
+        filename, current_step = trivial_utils.create_filename_in_order('png', 'Step', current_step)
+        GridDrawer.color_cells_by_value(floorplan, filename)
+
+        print(
+            f'==================\nobtainable_cells={valid_obtainable_cells} {len(valid_obtainable_cells)}\nfloorplan=\n{floorplan}')
+
+    print(f'----')
+    print(f'insulated_cells={insulated_cells}: total {len(insulated_cells)}')
+    # 교환 로직 추가
+    floorplan = exchange_extreme_cells(floorplan)
+    filename, current_step = trivial_utils.create_filename_in_order('png', 'Reform', current_step)
+    GridDrawer.color_cells_by_value(floorplan, filename)
+
+    return floorplan
+
+# 제대로 동작하는 place_room
+def place_room3(floorplan, obtainable_cells):
+    insulated_cells = set()
+    valid_obtainable_cells = process_valid_cells(floorplan, insulated_cells, range(floorplan.shape[0]))
+    insulated_cells = set(obtainable_cells) - valid_obtainable_cells
+    current_step = 0
+    while valid_obtainable_cells:
+        active_cells = valid_obtainable_cells.copy()
+        num_unique_value = len(get_unique_values(floorplan, active_cells))
+        if num_unique_value > 1:
+            for cell in valid_obtainable_cells:
+                print(f'cell =  {cell} ')
+                if cell in active_cells:
+                    new_cell = choose_new_adjacent_cell(floorplan, cell)
+                else:
+                    continue  # 다음 셀을 실행한다.
+
+                # 새 셀이 삽입되면 원래 셀, 본인. 본인의 네이버 모두 valid한지 체크해야 한다.
+                print(f'\tnew_cell = {new_cell}')
+                if not check_valid_current_cell(floorplan, cell):
+                    if cell in active_cells:
+                        active_cells.remove(cell)
+                    insulated_cells.add(cell)
+
+                if check_valid_current_cell(floorplan, new_cell):
+                    active_cells.add(new_cell)
+                else:  # if not valid
+                    insulated_cells.add(new_cell)
+
+                for adj_cell in all_active_neighbors(new_cell, floorplan):
+                    if not len(collect_candidate_set(adj_cell, floorplan)) > 0:  # has no candidate
+                        if adj_cell in active_cells:
+                            active_cells.remove(adj_cell)
+                        insulated_cells.add(adj_cell)
+
+                print(f'\tactive_cells:{active_cells}:{len(active_cells)}')
+
+        # 모든 active_cell들의 값이 같으면 반복하지 말고 나머지 모든 셀을 그 값으로 채운다
+        elif num_unique_value == 1:
+            unique_value = floorplan[active_cells.pop()]
+            print(f'all the active_cells having same value {unique_value}')
+            floorplan[floorplan == 0] = unique_value
+            active_cells = set()
+
+        # gridname = trivial_utils.create_filename('png', 'Step')
+        filename, current_step = trivial_utils.create_filename_in_order('png', 'Step', current_step)
+        GridDrawer.color_cells_by_value(floorplan, filename)
+
+        print(
+            f'==================\nobtainable_cells={valid_obtainable_cells} {len(valid_obtainable_cells)}\nfloorplan=\n{floorplan}')
+        valid_obtainable_cells = active_cells.copy()
+    print(f'----')
+    print(f'insulated_cells={insulated_cells}: total {len(insulated_cells)}')
+
+    # 교환 로직 추가
+    floorplan = exchange_extreme_cells(floorplan)
+    filename, current_step = trivial_utils.create_filename_in_order('png', 'Reform', current_step)
+    GridDrawer.color_cells_by_value(floorplan, filename)
+
+    return floorplan
+
+def count_different_and_same_neighbors(floorplan, cell):
+    directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+    row, col = cell
+    current_value = floorplan[row][col]  # 수정된 부분
+    different_count = 0
+    same_count = 0
+
+    for dx, dy in directions:
+        new_row, new_col = row + dx, col + dy
+        if 0 <= new_row < len(floorplan) and 0 <= new_col < len(floorplan[0]):
+            neighbor_value = floorplan[new_row][new_col]  # 수정된 부분
+            if neighbor_value != current_value and neighbor_value > 0:
+                different_count += 1
+            elif neighbor_value == current_value:
+                same_count += 1
+
+    return different_count, same_count
+
+
+def exchange_extreme_cells(floorplan):
+    cell_dict = rooms_cells(floorplan)
+
+    # 각 방에서 가장 돌출된 셀과 가장 오목한 셀을 교환
+    for room_number, cells in cell_dict.items():
+        extreme_cell, concave_cell = find_extreme_and_concave_cells(floorplan, cells)
+        print(f'room={room_number} extreme_cell={extreme_cell}, concave_cell = {concave_cell}')
+        if extreme_cell and concave_cell:
+            print(f'room={room_number} extreme_cell={extreme_cell}, concave_cell = {concave_cell} are equal')
+            floorplan[extreme_cell[0], extreme_cell[1]], floorplan[concave_cell[0], concave_cell[1]] = (
+                floorplan[concave_cell[0], concave_cell[1]], floorplan[extreme_cell[0], extreme_cell[1]]
+            )
+            print(f'floorplan[{extreme_cell[0]}, {extreme_cell[1]}], floorplan[{concave_cell[0]}, {concave_cell[1]}] = \
+            {floorplan[extreme_cell[0], extreme_cell[1]]}, {floorplan[concave_cell[0], concave_cell[1]]} ')
+
+    return floorplan
+
+
+def rooms_cells(floorplan):
+    unique_values = np.unique(floorplan)
+    unique_values = unique_values[unique_values > 0]  # 방 번호만 추출
+    cell_dict = {value: [] for value in unique_values}
+    # 각 방 번호별로 셀을 분류
+    for row in range(floorplan.shape[0]):
+        for col in range(floorplan.shape[1]):
+            if floorplan[row, col] > 0:
+                cell_dict[floorplan[row, col]].append((row, col))
+    return cell_dict
+
+
+def find_extreme_and_concave_cells(floorplan, cells):
+    extreme_cell = None
+    concave_cell = None
+    max_neighbors = -1
+    min_neighbors = 5  # 가능한 최대 이웃 수는 4개이므로 5로 초기화
+
+    for cell in cells:
+        neighbors = all_active_neighbors(cell, floorplan)
+        if len(neighbors) > max_neighbors:
+            max_neighbors = len(neighbors)
+            concave_cell = cell
+        if len(neighbors) < min_neighbors:
+            min_neighbors = len(neighbors)
+            extreme_cell = cell
+
+    return extreme_cell, concave_cell
+
+
+def place_room2(floorplan, obtainable_cells):
+    insulated_cells = set()
+    valid_obtainable_cells = process_valid_cells(floorplan, insulated_cells, range(floorplan.shape[0]))
+    insulated_cells = set(obtainable_cells) - valid_obtainable_cells
+    current_step = 0
+    while valid_obtainable_cells:
+        active_cells = valid_obtainable_cells.copy()
+        num_unique_value = len(get_unique_values(floorplan, active_cells))
+        if num_unique_value > 1:
+            for cell in valid_obtainable_cells:
+                print(f'cell =  {cell} ')
+                if cell in active_cells:
+                    new_cells = expand_room_with_square_shape(floorplan, cell)
+                else:
+                    continue  # 다음 셀을 실행한다.
+
+                for new_cell in new_cells:
+                    if not check_valid_current_cell(floorplan, cell):
+                        if cell in active_cells:
+                            active_cells.remove(cell)
+                        insulated_cells.add(cell)
+
+                    if check_valid_current_cell(floorplan, new_cell):
+                        active_cells.add(new_cell)
+                    else:  # if not valid
+                        insulated_cells.add(new_cell)
+
+                    for adj_cell in all_active_neighbors(new_cell, floorplan):
+                        if not len(collect_candidate_set(adj_cell, floorplan)) > 0:  # has no candidate
+                            if adj_cell in active_cells:
+                                active_cells.remove(adj_cell)
+                            insulated_cells.add(adj_cell)
+
+                print(f'\tactive_cells:{active_cells}:{len(active_cells)}')
+
+        # 모든 active_cell들의 값이 같으면 반복하지 말고 나머지 모든 셀을 그 값으로 채운다
+        elif num_unique_value == 1:
+            unique_value = floorplan[active_cells.pop()]
+            print(f'all the active_cells having same value {unique_value}')
+            floorplan[floorplan == 0] = unique_value
+            active_cells = set()
+
+        # gridname = trivial_utils.create_filename('png', 'Step')
+        filename, current_step = trivial_utils.create_filename_in_order('png', 'Step', current_step)
+        GridDrawer.color_cells_by_value(floorplan, filename)
+
+        print(
+            f'==================\nobtainable_cells={valid_obtainable_cells} {len(valid_obtainable_cells)}\nfloorplan=\n{floorplan}')
+        valid_obtainable_cells = active_cells.copy()
+    print(f'----')
+    print(f'insulated_cells={insulated_cells}: total {len(insulated_cells)}')
+    return floorplan
+
+def expand_room_with_square_shape(floorplan, cell):
+    """
+    선택된 셀을 기준으로 사각형 모양을 유지하면서 인접한 셀을 확장하는 함수
+    """
+    directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+    new_cells = []
+
+    for dx, dy in directions:
+        new_row, new_col = cell[0] + dx, cell[1] + dy
+        if 0 <= new_row < floorplan.shape[0] and 0 <= new_col < floorplan.shape[1] and floorplan[new_row, new_col] == 0:
+            new_cells.append((new_row, new_col))
+            floorplan[new_row, new_col] = floorplan[cell[0], cell[1]]
+
+    # 사각형 모양을 유지하기 위해 추가 확장
+    additional_cells = []
+    for new_cell in new_cells:
+        additional_cell = expand_to_keep_square(floorplan, cell, new_cell)
+        if additional_cell:
+            additional_cells.append(additional_cell)
+            floorplan[additional_cell[0], additional_cell[1]] = floorplan[cell[0], cell[1]]
+
+    return new_cells + additional_cells
+
+def expand_to_keep_square(floorplan, cell, new_cell):
+    """
+    사각형 모양을 유지하기 위해 추가 확장하는 함수.
+    """
+    row_diff = new_cell[0] - cell[0]
+    col_diff = new_cell[1] - cell[1]
+
+    if abs(row_diff) == 1 and col_diff == 0:  # 상하 확장
+        additional_row, additional_col = new_cell[0] + row_diff, new_cell[1]
+    elif abs(col_diff) == 1 and row_diff == 0:  # 좌우 확장
+        additional_row, additional_col = new_cell[0], new_cell[1] + col_diff
+    else:
+        return None  # 확장이 불가능한 경우
+
+    if 0 <= additional_row < floorplan.shape[0] and 0 <= additional_col < floorplan.shape[1] and floorplan[additional_row, additional_col] == 0:
+        return (additional_row, additional_col)
+    return None
 
 
 
-def place_k_colors_on_grid(grid_arr, k, orientation_requirements):
-    # Randomly place k colors within the floorplan
-    colors_placed = 0
+def choose_adjacent_cells_for_shape(floorplan, cell):
+    """
+    선택된 셀을 기준으로 인접한 셀을 선택하여 사각형 모양을 유지하는 새로운 셀들을 반환합니다.
+    """
+    directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+    new_cells = []
+
+    for dx, dy in directions:
+        new_row, new_col = cell[0] + dx, cell[1] + dy
+        if 0 <= new_row < floorplan.shape[0] and 0 <= new_col < floorplan.shape[1] and floorplan[new_row, new_col] == 0:
+            new_cells.append((new_row, new_col))
+
+    if len(new_cells) >= 1:
+        return [new_cells[0]]
+    return [None]
+
+
+def expand_to_keep_square(floorplan, cell, new_cell):
+    """
+    사각형 모양을 유지하기 위해 추가 확장하는 함수.
+    """
+    row_diff = new_cell[0] - cell[0]
+    col_diff = new_cell[1] - cell[1]
+
+    if abs(row_diff) == 1 and col_diff == 0:  # 상하 확장
+        additional_row, additional_col = new_cell[0] + row_diff, new_cell[1]
+    elif abs(col_diff) == 1 and row_diff == 0:  # 좌우 확장
+        additional_row, additional_col = new_cell[0], new_cell[1] + col_diff
+    else:
+        return None  # 확장이 불가능한 경우
+
+    if 0 <= additional_row < floorplan.shape[0] and 0 <= additional_col < floorplan.shape[1] and floorplan[
+        additional_row, additional_col] == 0:
+        return (additional_row, additional_col)
+    return None
+
+
+def place_k_rooms_on_grid(grid_arr, k):
+    # Randomly place k rooms within the floorplan
+    rooms_placed = 0
     cells_coords = set()
-    coloring_grid = grid_arr.copy()
+    rooming_grid = grid_arr.copy()
     m, n = grid_arr.shape
-    while colors_placed < k:
+    while rooms_placed < k:
         row, col = random.randint(0, m - 1), random.randint(0, n - 1)
-        if coloring_grid[row, col] == 0:  # Ensure the cell is within the floorplan and uncolored
-            coloring_grid[row, col] = colors_placed + 1
+        if rooming_grid[row, col] == 0:  # Ensure the cell is within the floorplan and unroomed
+            rooming_grid[row, col] = rooms_placed + 1
             cells_coords.add((row, col))
-            colors_placed += 1
-    coloring_trid, cells_coords = relocate_by_orientation(coloring_grid, cells_coords, orientation_requirements)
-    return coloring_grid, cells_coords
+            rooms_placed += 1
+
+    return rooming_grid, cells_coords
+
 
 
 def relocate_by_orientation(grid, cells_coords, orientation_requirements):
     def is_position_correct(cell_positions, color, position):
-        print(f'cell_position={cell_positions}')
         row, col = position
         orientation = orientation_requirements[color]
-        print(f'color={color}, orientation = {orientation}')
 
         for other_color, other_position in cell_positions.items():
             if other_color == color:
-                print(f'other_color==color: {color}')
                 continue
             other_row, other_col = other_position
 
@@ -190,6 +508,13 @@ def relocate_by_orientation(grid, cells_coords, orientation_requirements):
     def swap_positions(grid, pos1, pos2):
         grid[pos1[0], pos1[1]], grid[pos2[0], pos2[1]] = grid[pos2[0], pos2[1]], grid[pos1[0], pos1[1]]
 
+    def find_extreme_positions(cells_coords):
+        north = min(cells_coords, key=lambda x: x[0])
+        south = max(cells_coords, key=lambda x: x[0])
+        west = min(cells_coords, key=lambda x: x[1])
+        east = max(cells_coords, key=lambda x: x[1])
+        return north, south, west, east
+
     m, n = grid.shape
     new_grid = np.copy(grid)
     cell_positions = {grid[row, col]: (row, col) for row, col in cells_coords}
@@ -197,16 +522,31 @@ def relocate_by_orientation(grid, cells_coords, orientation_requirements):
     any_changes = True
     while any_changes:
         any_changes = False
+        north, south, west, east = find_extreme_positions(cell_positions.values())
+
         for color, position in list(cell_positions.items()):
-            if color in orientation_requirements and not is_position_correct(cell_positions, color, position):
-                for other_color, other_position in list(cell_positions.items()):
-                    if other_color != color and is_position_correct(cell_positions, other_color, position):
-                        swap_positions(new_grid, position, other_position)
-                        cell_positions[color], cell_positions[other_color] = other_position, position
+            if color in orientation_requirements:
+                if not is_position_correct(cell_positions, color, position):
+                    if position == north:
+                        new_position = (position[0] - 1, position[1])  # Move north
+                    elif position == south:
+                        new_position = (position[0] + 1, position[1])  # Move south
+                    elif position == east:
+                        new_position = (position[0], position[1] + 1)  # Move east
+                    elif position == west:
+                        new_position = (position[0], position[1] - 1)  # Move west
+                    else:
+                        continue
+
+                    if (0 <= new_position[0] < m and 0 <= new_position[1] < n and
+                            new_grid[new_position[0], new_position[1]] == 0):
+                        swap_positions(new_grid, position, new_position)
+                        cell_positions[color] = new_position
                         any_changes = True
 
     new_cells_coords = set(cell_positions.values())
     return new_grid, new_cells_coords
+
 
 def to_np_array(grid):
     m, n = len(grid), len(grid[0]) if grid else 0
