@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Simple Apps for Various Tasks
 ## notebook tasks.ipynb
     'convert_jpg`
@@ -7,3 +8,6 @@
 ## merge pdf
 ## For GUI
 - call `file_trans.gui_main()` in main
+=======
+# planGA
+>>>>>>> e8e4f5daf3910ed78842a0ab4ff7ad8893bf17aa
