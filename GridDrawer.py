@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import matplotlib as mpl
 from matplotlib.colors import ListedColormap, Normalize, BoundaryNorm
 import numpy as np
+import textwrap
 from constants import UNIT_SCALE
 class GridDrawer:
 
@@ -371,9 +372,21 @@ class GridDrawer:
         plt.savefig(filename)
         plt.show()
 
+    @ staticmethod
+
 
     @staticmethod
-    def color_cells_by_value(grid, filename):
+    def color_cells_by_value(grid, filename, text=None):
+        def text_align(text):
+            text_list = text.split('\n')
+            short_text = [s for s in text_list if len(s) < 80]
+            long_text = [s for s in text_list if len(s) >= 80][0] if len(
+                [s for s in text_list if len(s) >= 80]) > 0 else ''
+            wrapped_text = textwrap.wrap(long_text, width=80)
+            aligned_text_list = short_text + wrapped_text
+            aligned_text = '\n'.join(aligned_text_list)
+            return aligned_text
+
         # 각 정수 값에 대응하는 RGB 색상 정의
         colors = np.array([(1, 1, 1),  # -1: 검정
                            (1, 1, 1),  # 0 : 흰색
@@ -394,10 +407,25 @@ class GridDrawer:
         fig, ax = plt.subplots()
         cax = ax.matshow(grid, cmap=cmap, norm=norm)
         # fig.colorbar(cax, ticks=range(7))
-        colorbar = fig.colorbar(cax, ticks=[-1, 0, 1, 2, 3, 4, 5])
-        colorbar.set_ticklabels(['OUT', 'NON', 'B1', 'B2', 'BT', 'LV', 'KT'])
+        # todo d위에 텍스트를 적기 위해 아래쪽으로 컬러바를 옮겼다. orientation과 shirink옵션 추가됨. 나중에 필요하면 제거
+        colorbar = fig.colorbar(cax, shrink=0.8,ticks=[-1, 0, 1, 2, 3, 4, 5])
+        colorbar.set_ticklabels(['OUT','OUT','1', '2', '3', '4', '5'])
+        # tick label의 크기와 방향 조정
+
+        # 하단 여백을 조정하여 텍스트를 추가할 공간 확보
+        plt.subplots_adjust(bottom = 0.2)
+        if text:
+            aligned_text = text_align(text)
+            plt.text(0.5, 0.02, aligned_text, ha='center', fontsize=10, transform=fig.transFigure)
+
+        # # 하단 여백을 조정하여 텍스트를 추가할 공간 확보
+        # plt.subplots_adjust(bottom=0.2)
+        #
+        # if text:
+        #     plt.figtext(0.5, -0.1, text, ha='center', fontsize=12)
+
         plt.savefig(filename)
-        print(f'{filename} saved')
+        print(f'{filename} with {text} saved')
         plt.show()
 
     @staticmethod

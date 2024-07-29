@@ -18,16 +18,16 @@ def create_folder_by_datetime():
     full_path = os.path.join(os.getcwd(), month_day,min_sec )
     try:
         os.makedirs(full_path, exist_ok=True)
-        print(f'made folder {full_path}')
+        # print(f'made folder {full_path}')
         return full_path
     except FileExistsError:
-        print(f'path already exists')
+        # print(f'path already exists')
         return current_path
     except PermissionError:
-        print(f'Permission Error')
+        # print(f'Permission Error')
         return current_path
     except OSError as error:
-        print(f'An error occured: {error}')
+        # print(f'An error occured: {error}')
         return current_path
 
 
@@ -69,7 +69,7 @@ def create_filename(path, prefix=None, postfix=None, filename=None, ext='txt'):
 
     # Combine the path and filename
     complete_path = os.path.join(full_path, full_filename)
-    print(f'complete_path = {complete_path} returns')
+    # print(f'complete_path = {complete_path} returns')
     return complete_path
 
 
@@ -82,7 +82,7 @@ def create_filename_in_order(ext='txt', prefix=None, postfix_number=0):
     postfix_number += 1
     postfix = str(postfix_number)
     full_path = create_filename(path, prefix, postfix, '', 'png') #todo to test
-    print(f'full_path = {full_path}')
+    # print(f'full_path = {full_path}')
     return full_path, postfix_number
 
 

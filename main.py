@@ -13,6 +13,7 @@ from GridPolygon import GridPolygon
 from PolygonExporter import PolygonExporter
 from measure import categorize_boundary_cells
 from plan import create_floorplan
+from cell_variation import exchange_protruding_cells
 
 from trivial_utils import create_filename_with_datetime
 import constants
@@ -113,6 +114,7 @@ def test_main():
     GridDrawer.color_cells_by_value(floorplan, full_path)
     GridDrawer.draw_plan_equal_thickness(floorplan)
     GridDrawer.draw_plan_padded(floorplan)
+    exchange_protruding_cells(floorplan, 10)
     horiz, vert = categorize_boundary_cells(floorplan, 1)
     print(f'test_categorized_boundary_cells: length = h = {horiz}, v = {vert}')
 
@@ -153,7 +155,7 @@ def simple_test():
     ])
     obtainable_cells = [(0, 0), (0, 3), (1, 0), (1 ,1), (2, 0)]  # Starting cells that are not zero
 
-    updated_floorplan = place_room(floorplan, obtainable_cells)
+    updated_floorplan = exchange_protruding_cells(floorplan, obtainable_cells)
     print("Updated floorplan:")
     for row in updated_floorplan:
         print(row)
