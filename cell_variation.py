@@ -58,6 +58,23 @@ def get_two_neighbors_direction(added_dir_pair):
     elif added_dir_pair == (0,0):
         return 'parallel'
     # todo 방향도 가지고 있어야 됨
+
+def diagonal_pairs():
+    diag_d = [(-1, -1), (-1, 1), (1, 1), (1, -1)]
+    diag_set = set()
+#    for d1 in diag_d:
+#        for d2 in diag_d:
+#            if d1[0] == -d2[0] and d1[1] == -d2[1]:  # 음수면 대각선
+#                diag_set.add(tuple(sorted([d1, d2])))
+    diag_set = list({tuple(sorted([d1, d2])) for d1 in diag_d for d2 in diag_d if d1[0] == -d2[0] and d1[1] == -d2[1]})
+    return diag_set
+
+def parallel_pairs():
+    d = [(-1, 0), (0, 1), (1, 0), (0, -1)]
+    parallel_set = list({tuple(sorted([d1, d2])) for d1 in d for d2 in d if d1[0] + d2[0] == 0 and d1[1] + d2[1] == 0})
+    return parallel_set
+
+
 # neighbor의 위치와 방향을 쌍으로 가지고 있는 리스트를 리턴
 def count_neighbors_dirs(floorplan, cell):
     directions = [(-1, 0), (0, 1), (1, 0), (0, -1)]
@@ -72,6 +89,18 @@ def count_neighbors_dirs(floorplan, cell):
         elif floorplan[cell] != floorplan[neighbor]: # diff_room
             diff_room_neighbors.append((neighbor, d))
     return invalids, same_room_neighbors, diff_room_neighbors
+# todo to see 하나의 조건만 봐보자
+def is_cascading_cell_simple(floorplan, cell):
+    current_room = floorplan[cell]
+    invalid_neighbors, same_room_neighbors, diff_room_neighbors = count_neighbors_dirs(floorplan,cell)
+    num_diff_invalid = len(invalid_neighbors) + len(diff_room_neighbors)
+
+    if is_valid_cell(floorplan, cell) and num_diff_invalid >=3:
+        return True
+    else:
+        return False
+
+
 def is_cascading_cell(floorplan, cell, is_boundary=False, is_rooms_boundary = False):
 
     rows, cols = floorplan.shape
@@ -79,26 +108,66 @@ def is_cascading_cell(floorplan, cell, is_boundary=False, is_rooms_boundary = Fa
 
     # 방향: 북, 동, 남, 서
     directions = [(-1, 0), (0, 1), (1, 0), (0, -1)]
-
+    diag_dr = diagonal_pairs()
+    parallel_dr = parallel_pairs()
     # 셀이 유효한 범위에 있는지 확인하는 함수
     if not is_valid_cell(floorplan, cell): return False
+    # for pair in parallel_dr: # 평행한 두 개의 네이버 셀이 모두 같은 방이라면 다 연결되어 있으므로 cascading 하지 않다. boundary면 에러나니까 밑으로 내렸다.
+#    parallel_neighbors = [tuple(cell[0]+pair[0], cell[1]+pair[1]) for pair in parallel_dr
+#                          if floorplan[pair[0]+cell[0]] == floorplan[cell] and floorplan[pair[1]+cell[1]] == floorplan[cell]]
 
     # todo 이건 두 칸 떨어진 셀도 같거나 다르거나 한 걸 구하는 것임
     invalid_neighbors, neighbor_cell_dir_diff_room, neighbor_cell_dir_same_room = count_two_continuous_directional_neighbors(floorplan, cell, directions, room_value)
     # todo  위의 변수들은 두칸 넘어 셀들에 대한 값임, 아래는 바로 네이버에 대한 값임
     invalid_neighbors, same_room_neighbors, diff_room_neighbors = count_neighbors_dirs(floorplan, cell)
+    num_diff_invalid = len(invalid_neighbors) + len(diff_room_neighbors)
+    if num_diff_invalid >= 3:
+        return True
+    if num_diff_invalid < 2: # same이
+        return False
+    if len(same_room_neighbors) >= 3:
+        print(f'[is_cascading]: False {cell} length of same room cell neighbor = len{len(same_room_neighbors)} ')
+        return False
+
+    # 대각선 방향의 쌍을 구한다.
+
+    # todo 1. boundary랑 상관없이 parallel sides in the same room => False
+    # todo 2. corner인 경우  same >= 2: False definitely
+    # todo 3. corner인 경우 same == 1? (I think it is) True corner인 경우 same 이 1 이라는 것은 parallel_same 이 될 수 없다는 것
+
+    # todo is_boundary_cell이 진정으로 필요한가를 다시 한 번 따져보자. 별도 버전으로 가자.
 
     if is_boundary_cell(floorplan, cell) :
-        if len(invalid_neighbors) + len(diff_room_neighbors) >= 3 :
-            # print(f'{cell} True because boundary and len(invalid_neighbors) + len(neighbor_cell_dir_diff_room) {len(invalid_neighbors) + len(neighbor_cell_dir_diff_room)} >= 3')
-            return True
+        # corner 먼저 처리
+        if len(invalid_neighbors) >= 2: # 코너
+            if len(same_room_neighbors) >= 2:
+                print(f'same_room_neighbors = len{same_room_neighbors} and boundary than must ')
+                return False # todo 같은 이웃이 2보다 크다는 건 다른 게 2보다 작다는 뜻 그런데 boundary니까 적어도 invalid  가 1 invalid+diff < 2 1+diff < 2 diff < 3
+            elif len(same_room_neighbors) <= 1:
+                return True
+
+        if len(invalid_neighbors) == 1: # 에지(면)
+            if len(same_room_neighbors) >= 3: # 3이면 False 2이면 것은 일단 남았다가 two_by_two_block_same_room으로 결정
+                return False
         else: # boundary_cell인데 이1셀 이하로만 다르다면 definitely 그냥 boundary todo 모든 boundary에 대해서 다 체크해보자.
             # print(f'{cell} False because boundary and NOT len(invalid_neighbors) + len(neighbor_cell_dir_diff_room) {len(invalid_neighbors) + len(neighbor_cell_dir_diff_room)} >= 3')
             return False
     else: # not boundary_cell # no invalid_neighbors
-        if len(diff_room_neighbors) >= 3 : # boundary cell이 아니더라도 세 개 이상이 다르면 무조건 cascading
-            return True
+        # 수직/수평 방향으로 두 쌍의 양옆 네이버가 현재 룸과 같은 것 고름. 하나라도 있으면 양옆으로 공간이 더 있다는 소리니까 not cascading
+        parallel_neighbors = [(tuple(np.add(cell, pair[0])), tuple(np.add(cell,pair[1]))) for pair in parallel_dr]
+        parallel_neighbors_same_room = [sides for sides in parallel_neighbors if
+            floorplan[sides[0]] == floorplan[cell] and floorplan[sides[1]] == floorplan[cell]]
 
+        # 대각선 방향의 두 인접셀 쌍이 모두 다른 방이라면 모른다.
+        orthogonal_neighbors = [(tuple(np.add(cell, pair[0])), tuple(np.add(cell,pair[1]))) for pair in diag_dr]
+        orthogonal_neighbors_same_room = [sides for sides in orthogonal_neighbors if
+        floorplan[sides[0]] == floorplan[cell] and floorplan[sides[1]] == floorplan[cell]]
+        orthorgonal_neighbor_diff_pair = [sides for sides in orthogonal_neighbors if
+                                  floorplan[sides[0]] == floorplan[cell] and floorplan[sides[1]] != floorplan[cell]]
+
+        if len(parallel_neighbors_same_room) > 0 :
+            return False
+        # todo 얘를 맨 위로 끌어올리자. diff_room_neighbor가 구해지자 마자 알 수 있으므로
         if len(diff_room_neighbors) == 2 and len(same_room_neighbors) == 2: #  두개 두개씩 같을 때는 다른 방에서 대각선을 본다.
             diag_d = [(-1, -1), (-1, 1), (1, 1), (1, -1)]
             for diff_cell, diff_dr in diff_room_neighbors:
@@ -394,12 +463,17 @@ def random_cascading_cell(cascading_cells):
 
 def update_cascading_cells_array(floorplan, cascading_cells_array, cell):
     # cell의 cascading 여부를 먼저 확인후
-    cascading_cells_array[cell] = is_cascading_cell(floorplan, cell)
+    # todo 1. 0730 is_cascading_cell => is_cascading_cell_simple
+    # cascading_cells_array[cell] = is_cascading_cell(floorplan, cell)
+    cascading_cells_array[cell] = is_cascading_cell_simple(floorplan, cell)
+
 
     # 이웃 셀들의 cascading 여부를 확인
     neighbors = all_active_neighbors(cell, floorplan)
     for neighbor_cell in neighbors:
-        cascading_cells_array[neighbor_cell] = is_cascading_cell(floorplan, neighbor_cell)
+        # todo 2. 0730 is_cascading_cell => is_cascading_cell_simple
+        # cascading_cells_array[neighbor_cell] = is_cascading_cell(floorplan, neighbor_cell)
+        cascading_cells_array[neighbor_cell] = is_cascading_cell_simple(floorplan, neighbor_cell)
     print(f'number of cascading cells = {np.count_nonzero(cascading_cells_array==1)}')
     return cascading_cells_array
 
@@ -479,7 +553,27 @@ def update_cascading_cells_array(floorplan, cascading_cells_array, cell):
 #
 #             grid_print_as_int(cascading_cells)
 #             grid_to_image(floorplan)
-
+# cascading이 더 늘어나지 않도록
+def is_better_change(floorplan, cell, new_room):
+    old_room = floorplan[cell]
+    neighbors = all_active_neighbors(cell, floorplan)
+    # todo 3. 0730 is_cascading_cell => is_cascading_cell_simple
+    # cascading_neighbors = [n for n in neighbors if is_cascading_cell(floorplan, n)]
+    cascading_neighbors = [n for n in neighbors if is_cascading_cell_simple(floorplan, n)]
+    floorplan[cell] = new_room
+    new_neighbors = all_active_neighbors(cell, floorplan)
+    # todo 4. 0730 is_cascading_cell => is_cascading_cell_simple
+    # new_cascading_neighbors = [n for n in neighbors if is_cascading_cell(floorplan, n)]
+    new_cascading_neighbors = [n for n in neighbors if is_cascading_cell_simple(floorplan, n)]
+    floorplan[cell] = old_room # 바꾸지 말고 원래대로 리턴
+    print(f'[is_better_change] before cascading_neighbors {len(cascading_neighbors)} = {cascading_neighbors} ')
+    print(f'[is_better_change] after cascading_neighbors {len(new_cascading_neighbors)} = {new_cascading_neighbors} ')
+    if len(cascading_neighbors) < len(new_cascading_neighbors):
+        print(f'[debugging] change {cell} from {old_room} to {new_room} is not better')
+        return False
+    else:
+        print(f'[debugging] change {cell} from {old_room} to {new_room} is better')
+        return True
 
 def is_valid_change(floorplan, cell, new_room, changed_cell_history):
     old_room  = floorplan[cell]
@@ -533,18 +627,18 @@ def exchange_protruding_cells(floorplan, iteration=1):
             w+=1
             print(f'[debugging] while loop iteration {w}')
             new_room_number = random.choice(candidate_rooms)
-            if is_valid_change(floorplan, cell, new_room_number, changed_cell_history): # 교환했으므로  while문을 빠져나온다.
+            if is_better_change(floorplan, cell, new_room_number) and is_valid_change(floorplan, cell, new_room_number, changed_cell_history): # 교환했으므로  while문을 빠져나온다.
                 update_cascading_cells_array(floorplan, cascading_cells, cell)
                 cascading_cells_list = list(map(tuple, np.argwhere(cascading_cells == 1)))
-                text = f'{cell}: {current_room_number} => {new_room_number}\nhistory={changed_cell_history}\ncascading={cascading_cells_list}'
+                text = f'Step {i}  {cell}: {current_room_number} => {new_room_number}\nhistory={changed_cell_history}\ncascading({len(cascading_cells_list)}) = {cascading_cells_list}'
                 print(f'Step {i} exchange {cell} to Room{new_room_number}...\ncascading_cell_list={cascading_cells_list}\nchanged_cell_history({len(changed_cell_history)}) = {changed_cell_history}')
                 break
             else:
                 candidate_rooms.remove(new_room_number) # valid 하지 않으므로 지우고 다른 걸 선택한다.
-                text = 'no valid exchange rrom'
+                text = f'Step {i} Failed to change {cell} from {current_room_number} to {new_room_number}'
         grid_print_as_int(cascading_cells)
         grid_to_screen_image(floorplan,text = text)
-        if i > 3:
+        if i > 10:
             break
 
 def create_cascading_cells(floorplan):
@@ -561,7 +655,9 @@ def create_cascading_cells(floorplan):
         for j in range(floorplan.shape[1]):
             is_boundary = boundary_cells[i, j]
             is_rooms_boundary = rooms_boundary_cells[i, j]
-            cascading_cells[i][j] = is_cascading_cell(floorplan, (i, j), is_boundary, is_rooms_boundary)
+            # todo 5. 0730 is_cascading_cell => is_cascading_cell_simple
+            # cascading_cells[i][j] = is_cascading_cell(floorplan, (i, j), is_boundary, is_rooms_boundary)
+            cascading_cells[i][j] = is_cascading_cell_simple(floorplan, (i, j))
     print(f'number of cascading_cells = {np.count_nonzero(cascading_cells==1)}')
     # 결과 출력 (칸을 맞춰서)
     grid_print_as_int(cascading_cells)
@@ -581,7 +677,7 @@ def test_main():
     [-1, -1, -1, -1, 5, 5, 5, 5, -1, -1, -1, -1, -1, -1],
     [-1, -1, -1, -1, 5, 5, 5, 5, -1, -1, -1, -1, -1, -1]
     ])
-    grid_to_image(floorplan)
+    grid_to_screen_image(floorplan, 'Initial_floorplan')
     # test_module(floorplan)
     exchange_protruding_cells(floorplan, 100)
     # grid_print(floorplan)

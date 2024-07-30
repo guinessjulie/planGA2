@@ -378,13 +378,14 @@ class GridDrawer:
     @staticmethod
     def color_cells_by_value(grid, filename, text=None):
         def text_align(text):
+            width = 100
             text_list = text.split('\n')
-            short_text = [s for s in text_list if len(s) < 80]
-            long_text = [s for s in text_list if len(s) >= 80][0] if len(
-                [s for s in text_list if len(s) >= 80]) > 0 else ''
-            wrapped_text = textwrap.wrap(long_text, width=80)
-            aligned_text_list = short_text + wrapped_text
-            aligned_text = '\n'.join(aligned_text_list)
+            short_text = '\n'.join(s for s in text_list if len(s) < width)
+            long_texts = [s for s in text_list if len(s) >= width] if len(
+                [s for s in text_list if len(s) >= width]) > 0 else ''
+            wrapped_texts = ['\n'.join(textwrap.wrap(lt, width=width)) for lt in long_texts ]
+            wrapped_texts = '\n'.join(wrapped_texts)
+            aligned_text = short_text + '\n'+ wrapped_texts
             return aligned_text
 
         # 각 정수 값에 대응하는 RGB 색상 정의
