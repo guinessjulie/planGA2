@@ -597,6 +597,39 @@ def is_valid_change(floorplan, cell, new_room, changed_cell_history):
         floorplan[cell] = old_room
         return False
 
+
+def count_cascading_cells_neighbors(floorplan, cell, old_room, new_room_number):
+    # 변경전 당연히 cascading
+    neighbors = all_active_neighbors(cell, floorplan)
+    cascading_neighbors = [n for n in neighbors if is_cascading_cell_simple(floorplan, n)]
+    old_cascading_count = len(cascading_neighbors) + 1
+
+    floorplan[cell] = new_room_number # 변경 후
+    new_cell_cascading = is_cascading_cell_simple(floorplan,cell)
+    new_cascading_neighbors = [n for n in neighbors if is_cascading_cell_simple(floorplan, n)]
+    new_cascading_count = len(new_cascading_neighbors) + 1 if new_cell_cascading else len(new_cascading_neighbors)
+
+    # revert
+    floorplan[cell] = old_room
+    return old_cascading_count - new_cascading_count
+
+def update_cascading(floorplan,cell,neighbors, cascading_cells_list, cascading_cells):
+    if not is_cascading_cell_simple(floorplan, cell):
+        if cell in cascading_cells_list:
+            cascading_cells_list.remove(cell)
+            cascading_cells[cell] = 0
+
+    for neighbor in neighbors:
+        if is_cascading_cell_simple(floorplan, neighbor):
+            if neighbor not in cascading_cells_list:
+                cascading_cells_list.append(neighbor)
+                cascading_cells[neighbor] = 1
+        else:
+            if neighbor in cascading_cells_list:
+                cascading_cells_list.remove(neighbor)
+                cascading_cells[neighbor] = 0
+
+
 def exchange_protruding_cells(floorplan, iteration=1):
     cascading_cells = create_cascading_cells(floorplan)
     changed_cell_history={}
@@ -604,18 +637,21 @@ def exchange_protruding_cells(floorplan, iteration=1):
         return
 
     cascading_cells_list = list(map(tuple, np.argwhere(cascading_cells == 1)))
+    candidate_cascading_cells_list = cascading_cells_list.copy()
     i = 0
     # todo 무한루프 해결
 
+    # while len(candidate_cascading_cells_list) > 0: # todo 1. 0731 to see candidate_cascading_cell_list => cascading_cell_list
     while len(cascading_cells_list) > 0:
         i += 1
-        cell = random.choice(cascading_cells_list)
+        # cell = random.choice(candidate_cascading_cells_list) ## todo 2. 0731 to see candidate_cascading_cell_list => cascading_cell_list
+        cell = random.choice(cascading_cells_list) #
         current_room_number = floorplan[cell]
         neighbors = all_active_neighbors(cell, floorplan) # 선택된 셀의 neighbors들 중에서 선택
         neighbors_room_to_exchange = list(set([ floorplan[n] for n in neighbors if floorplan[n] != current_room_number])) # 같은 방 제외
         # filtering1: 네이버 room들 중에서 다른 방 선택
         candidate_rooms = [room for room in neighbors_room_to_exchange]
-        print(f'Step [{i} ]Cell [{cell}]: candidate_room before filtering changed history: {candidate_rooms}')
+        print(f'Step [{i}] Cell [{cell}]: from {candidate_cascading_cells_list} before filtering changed history: candidate_rooms= {candidate_rooms}')
         if cell in changed_cell_history: # filtering more
             candidate_rooms = [room for room in candidate_rooms if room not in changed_cell_history[cell]]
         print(f'\tCell [{cell}]: candidate_room after filtering changed history: {candidate_rooms}')
@@ -623,22 +659,57 @@ def exchange_protruding_cells(floorplan, iteration=1):
         # 교환하자.
         # candidate_rooms가 success하거나 없어질 때까지 새 방을 고른다. todo candidate_rooms는 never 몽땅 없어지지 않는다. 그러므로 while에서 무한루프를 돈다. 무엇이 stop시킬 수 있는지를 고민해보자. 아마도 changed_cell_history에서 더이상 가져올 게 없을 때를 보는 게 맞는 거 같다.
         w = 0
-        while len(candidate_rooms) > 0 :
-            w+=1
-            print(f'[debugging] while loop iteration {w}')
-            new_room_number = random.choice(candidate_rooms)
-            if is_better_change(floorplan, cell, new_room_number) and is_valid_change(floorplan, cell, new_room_number, changed_cell_history): # 교환했으므로  while문을 빠져나온다.
-                update_cascading_cells_array(floorplan, cascading_cells, cell)
-                cascading_cells_list = list(map(tuple, np.argwhere(cascading_cells == 1)))
-                text = f'Step {i}  {cell}: {current_room_number} => {new_room_number}\nhistory={changed_cell_history}\ncascading({len(cascading_cells_list)}) = {cascading_cells_list}'
-                print(f'Step {i} exchange {cell} to Room{new_room_number}...\ncascading_cell_list={cascading_cells_list}\nchanged_cell_history({len(changed_cell_history)}) = {changed_cell_history}')
-                break
-            else:
-                candidate_rooms.remove(new_room_number) # valid 하지 않으므로 지우고 다른 걸 선택한다.
-                text = f'Step {i} Failed to change {cell} from {current_room_number} to {new_room_number}'
+        if len(candidate_rooms) == 0:
+            # candidate_cascading_cells_list.remove(cell)
+            cascading_cells_list.remove(cell) ## todo 3. 0731 to see candidate_cascading_cell_list => cascading_cell_list
+            continue # []빈 candidate_room을 가졌으므로 candidatae_cascading_cell_list도 업데이트해야 됨
+        elif len(candidate_rooms) > 1:
+            best_room = candidate_rooms[0]
+            gap = count_cascading_cells_neighbors(floorplan, cell, current_room_number, best_room)
+
+            for it in range(len(candidate_rooms)-1):
+                gap2 = count_cascading_cells_neighbors(floorplan, cell, current_room_number, candidate_rooms[it+1])
+                if gap < gap2:
+                    best_room = candidate_rooms[it+1]
+        elif len(candidate_rooms) == 1:
+            best_room = candidate_rooms[0]
+        if is_valid_change(floorplan, cell, best_room, changed_cell_history): # 성공했다면
+            update_cascading(floorplan,cell, neighbors, cascading_cells_list, cascading_cells)
+            # candidate_cascading_cells_list.remove(cell)
+            text = (f'Step {i}  {cell}: {current_room_number} => {best_room}\nhistory={changed_cell_history}\n'
+                    f'cascading({len(cascading_cells_list)}) = {cascading_cells_list}')
+        else:
+            candidate_rooms.remove(best_room)  # valid 하지 않으므로 지우고 다른 걸 선택한다.
+            text = (f'Step {i} Failed to change {cell} from {current_room_number} to {best_room}\n'
+                    f'becuase ( {cell} to {best_room}) is not valid')
+
+# todo logic  변경했음
+#        while len(candidate_rooms) > 0 :
+#            w+=1
+#            print(f'[debugging] while loop iteration {w}')
+#            new_room_number = random.choice(candidate_rooms)
+#            # candidate_rooms에서 new_room_number가 제거되었으므로 똑같은 것을 뽑을 리가 없구만 위에서 똑같은 셀을 뽑지 못하게 해야겠군
+#            better = is_better_change(floorplan, cell, new_room_number)
+#            valid_change = is_valid_change(floorplan, cell, new_room_number, changed_cell_history)
+#            if better  and valid_change: # 교환했으므로  while문을 빠져나온다.
+#                # update_cascading_cells_array(floorplan, cascading_cells, cell)#todo cascading_cells를 update안했기 때문에 변하지 않은 것을 가지고 업데이트한다. done
+#                update_cascading(floorplan, cell, neighbors, cascading_cells_list, cascading_cells)
+#                candidate_cascading_cells_list.remove(cell)
+#                # todo candidate_cascading_cell_list로 판단하는데. 이것을 어떻게 해야 되나
+#                text = f'Step {i}  {cell}: {current_room_number} => {new_room_number}\nhistory={changed_cell_history}\ncascading({len(cascading_cells_list)}) = {cascading_cells_list}'
+#                print(f'Step {i} exchange {cell} to Room{new_room_number}...\ncascading_cell_list={cascading_cells_list}\nchanged_cell_history({len(changed_cell_history)}) = {changed_cell_history}')
+#                break
+#            else:
+#                candidate_rooms.remove(new_room_number) # valid 하지 않으므로 지우고 다른 걸 선택한다.
+#                if len(candidate_rooms) == 0: # candidate_room 이 없으면
+#                    candidate_cascading_cells_list.remove(cell)
+#                text = (f'Step {i} Failed to change {cell} from {current_room_number} to {new_room_number}\n'
+#                        f'becuase either is_better_change( {cell} to {new_room_number})is {better} or\n'
+#                        f'is_valid_change is {valid_change}')
+
         grid_print_as_int(cascading_cells)
         grid_to_screen_image(floorplan,text = text)
-        if i > 10:
+        if i > 20:
             break
 
 def create_cascading_cells(floorplan):
