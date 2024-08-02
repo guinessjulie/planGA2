@@ -31,6 +31,18 @@ def create_folder_by_datetime():
         return current_path
 
 
+def prefix_datetime_string(prefix = None, serial_no = None, path=None):
+    formatted_datetime = f'{prefix}_{datetime.now().strftime("%m%d_%H%M%S")}_{serial_no}' \
+        if serial_no else f'{prefix}_{datetime.now().strftime("%m%d_%H%M%S")}'
+    if path :
+        full_path = os.path.join((os.getcwd(), path))
+        os.makedirs(full_path, exist_ok=True)
+    else:
+        full_path = os.path.join(os.getcwd(), formatted_datetime)
+        os.makedirs(full_path, exist_ok=True)
+    # return formatted_datetime
+    return full_path
+
 def create_filename_with_datetime(ext='txt', prefix=None, path=None):
     if path :
         full_path = os.path.join(os.getcwd(), path)
@@ -85,6 +97,15 @@ def create_filename_in_order(ext='txt', prefix=None, postfix_number=0):
     # print(f'full_path = {full_path}')
     return full_path, postfix_number
 
+def create_file_name_in_path(path=None, prefix=None, postfix_number = 0):
+    if path is None:
+        path = create_folder_by_datetime()
+    if prefix is None:
+        prefix = ''
+    postfix = str(postfix_number)
+    filename = f'{prefix}_{get_hour_min_4_digit()}_{postfix}'
+    full_path = os.path.join(path, filename )
+    return full_path
 
 def unique_elements_2d_array(arr_2d):
     unique_elements = set()

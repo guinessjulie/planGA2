@@ -127,6 +127,14 @@ def test_main():
     }
     graph = run_selected_module(build_modules, floorplan)
 
+    draw_modules = {
+        "1": GraphDrawer.draw_graph,
+        "2": GraphDrawer.draw_weighted_graph,
+        "3": GraphDrawer.draw_graph_with_boundary,
+        "9" : exit_module
+    }
+    run_selected_module(draw_modules, graph, full_path)
+
     polygon_module = {
         "1" : build_polygon,
         "9" : exit_module
@@ -134,14 +142,6 @@ def test_main():
 
     run_selected_module(polygon_module, floorplan)
 
-    draw_modules = {
-        "1": GraphDrawer.draw_graph,
-        "2": GraphDrawer.draw_weighted_graph,
-        "3": GraphDrawer.draw_graph_with_boundary,
-        "9" : exit_module
-    }
-
-    run_selected_module(draw_modules, graph, full_path)
 
 
 def simple_test():

@@ -43,7 +43,14 @@ class GridDrawer:
         outfile (str): 생성된 이미지를 저장할 파일 이름.
         """
         # 이미지 객체 생성
-        im = Image.new('RGB', (150, 150), (255, 255, 255))
+        # im = Image.new('RGB', (150, 150), (255, 255, 255))
+        max_row = max(coord[0] for coord in coords)
+        max_col = max(coord[1] for coord in coords)
+
+        width = (max_col + 1) * 20 + 20
+        height = (max_row + 1) * 20 + 20
+        im = Image.new('RGB', (width, height), (255, 255, 255))
+
         draw = ImageDraw.Draw(im)
 
         # s 내의 각 좌표에 사각형 그리기 (첫 번째 원소를 행으로, 두 번째 원소를 열로)
@@ -165,6 +172,7 @@ class GridDrawer:
         plt.axis('off')
         plt.savefig(filename)
         plt.show()
+        plt.close()
 
     def draw_plan(floorplan):
         # Define the new grid structure
@@ -261,12 +269,12 @@ class GridDrawer:
     @staticmethod
     def draw_plan_equal_thickness(grid):
         # Define the new grid structure
-        grid = np.array([
-            [2, 2, 5, 5, 5, -1, -1],
-            [2, 2, 4, 4, 1, 3, 3],
-            [2, 2, 4, 4, 1, 1, -1],
-            [-1, -1, 4, 4, -1, -1, -1]
-        ])
+        # grid = np.array([
+        #     [2, 2, 5, 5, 5, -1, -1],
+        #     [2, 2, 4, 4, 1, 3, 3],
+        #     [2, 2, 4, 4, 1, 1, -1],
+        #     [-1, -1, 4, 4, -1, -1, -1]
+        # ])
 
         # Define the scale
         scale = 1000  # 1 unit = 1000mm
@@ -277,9 +285,10 @@ class GridDrawer:
 
         # Get the unique room identifiers and their corresponding colors
         rooms = np.unique(grid)
+
         colors = {
-            0: 'white', 1: 'red', 2: 'blue', 3: 'yellow',
-            4: 'cyan', 5: 'green', -1: 'gray'
+            0: 'white', 1: 'red', 2:'green', 3: 'blue', 4: 'yellow',
+            5: 'cyan', 6: 'magenta', 7: 'purple', 8: 'orange', 9:'lime', 10:'pink', -1: 'gray'
         }
 
         # Plot each room with the corresponding color
@@ -337,7 +346,7 @@ class GridDrawer:
         plt.show()
 
     @staticmethod
-    def plot_colored_grid(grid, filename):
+    def plot_colored_grid(grid, filename,  display=False, save=True):
         """
         display a colored grid regarding numbers of the cells.
 
@@ -369,14 +378,81 @@ class GridDrawer:
         plt.axis('off')
 
         # Show the plot
-        plt.savefig(filename)
-        plt.show()
-
-    @ staticmethod
-
+        if save:
+            plt.savefig(filename)
+        if display:
+            plt.show()
+        plt.close()
 
     @staticmethod
-    def color_cells_by_value(grid, filename, text=None):
+    def color_cells_by_value(grid, filename, text=None, display=True, save=True, num_rooms = 5):
+
+        # Function to generate boundaries based on the number of rooms
+        def generate_boundaries(num_rooms):
+            start = -1.5
+            step = 1.0
+            num_boundaries = num_rooms + 3
+            boundaries = [start + i * step for i in range(num_boundaries)]
+            return boundaries
+
+        def text_align(text):
+            width = 100
+            text_list = text.split('\n')
+            short_text = '\n'.join(s for s in text_list if len(s) < width)
+            long_texts = [s for s in text_list if len(s) >= width] if len(
+                [s for s in text_list if len(s) >= width]) > 0 else ''
+            wrapped_texts = ['\n'.join(textwrap.wrap(lt, width=width)) for lt in long_texts]
+            wrapped_texts = '\n'.join(wrapped_texts)
+            aligned_text = short_text + '\n' + wrapped_texts
+            return aligned_text
+
+        # 각 정수 값에 대응하는 RGB 색상 정의
+        colors = np.array([(1, 1, 1),  # -1: 검정
+                           (1, 1, 1),  # 0 : 흰색
+                           (1, 0, 0),  # 1. 빨간색
+                           (0, 1, 0),  # 2. 초록색
+                           (0, 0, 1),  # 3. 파란색
+                           (1, 1, 0),  # 4. 노란색
+                           (0, 1, 1),  # 5. cyon
+                           (1, 0, 1),  # 6. magenta
+                           (0.5,0, 0.5), # 7. purple
+                           (1, 0.5, 0), # 8.orange
+                           (0.5, 1, 0), # 9. lime
+                           (1, 0.75, 0.8) # pink
+                           ])
+
+        cmap = ListedColormap(colors[:num_rooms+2])
+
+        # 데이터 값의 범위에 따른 경계값 설정 (여기서는 -1에서 5까지)
+        # boundaries = [-1.5, -0.5, 0.5, 1.5, 2.5, 3.5, 4.5, 5.5]
+        boundaries =  generate_boundaries(num_rooms)
+        print(f'num_rooms={num_rooms}, boundaries = {boundaries}')
+        norm = BoundaryNorm(boundaries, cmap.N)
+
+        # matshow로 데이터 시각화
+        fig, ax = plt.subplots()
+        cax = ax.matshow(grid, cmap=cmap, norm=norm)
+        # fig.colorbar(cax, ticks=range(7))
+        # todo d위에 텍스트를 적기 위해 아래쪽으로 컬러바를 옮겼다. orientation과 shirink옵션 추가됨. 나중에 필요하면 제거
+        colorbar = fig.colorbar(cax, shrink=0.8, ticks=[0, 1, 2, 3, 4, 5])
+        colorbar.set_ticklabels(['OUT', '1', '2', '3', '4', '5'])
+        # tick label의 크기와 방향 조정
+
+        # 하단 여백을 조정하여 텍스트를 추가할 공간 확보
+        plt.subplots_adjust(bottom=0.2)
+        if text:
+            aligned_text = text_align(text)
+            plt.text(0.5, 0.02, aligned_text, ha='center', fontsize=10, transform=fig.transFigure)
+
+        if save:
+            plt.savefig(filename)
+            print(f'{filename} with {text} saved')
+        if display:
+            plt.show()
+        return fig
+
+    @staticmethod
+    def color_cells_by_value_save(grid, filename, text=None, display=True,save=True):
         def text_align(text):
             width = 100
             text_list = text.split('\n')
@@ -389,7 +465,7 @@ class GridDrawer:
             return aligned_text
 
         # 각 정수 값에 대응하는 RGB 색상 정의
-        colors = np.array([(1, 1, 1),  # -1: 검정
+        colors = np.array([(0, 0, 0),  # -1: 검정
                            (1, 1, 1),  # 0 : 흰색
                            (1, 0, 0),  # 빨간색
                            (0, 1, 0),  # 초록색
@@ -424,10 +500,12 @@ class GridDrawer:
         #
         # if text:
         #     plt.figtext(0.5, -0.1, text, ha='center', fontsize=12)
-
-        plt.savefig(filename)
-        print(f'{filename} with {text} saved')
-        plt.show()
+        if save:
+            plt.savefig(filename)
+            print(f'{filename} with {text} saved')
+        if display:
+            plt.show()
+        plt.close()
 
     @staticmethod
     def plot_grids(grids, m, n, k, rows=None, cols=5, fitness_scores=None, savefilename=None):
@@ -462,3 +540,4 @@ class GridDrawer:
         if savefilename is not None:
             plt.savefig(savefilename)
         plt.show()
+        plt.close()
