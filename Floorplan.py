@@ -85,26 +85,22 @@ class FloorplanApp:
         if self.init_grid is not None:
             self.floorplan = create_floorplan(self.init_grid, self.num_rooms)
             self.draw_floorplan()
-            messagebox.showinfo("Info", "Initial floorplan created")
 
     def create_path(self):
         self.path = trivial_utils.create_folder_by_datetime()  # todo test
         self.full_path = trivial_utils.create_filename(self.path, 'Plan', '', '', 'png')
-        messagebox.showinfo("Info", f"Path created: {self.full_path}")
 
     def draw_floorplan(self):
         self.create_path()
         if self.floorplan is not None:
             fig = GridDrawer.color_cells_by_value(self.floorplan, self.full_path, display=False, save=True, num_rooms = self.num_rooms)
             self.show_plot_on_canvas(fig)
-            messagebox.showinfo("Info", "Cells colored by Room value")
         else:
             messagebox.showwarning("Warning", "Create Floorplan First")
 
     def draw_equal_thickness(self):
-        if self.floorplan:
+        if self.floorplan is not None:
             GridDrawer.draw_plan_equal_thickness(self.floorplan)
-            messagebox.showinfo("Info", "Plan drawn with equal thickness")
         else:
             messagebox.showwarning("Warning", "Load floorplan first")
 
@@ -118,6 +114,7 @@ class FloorplanApp:
     def exchange_cells(self):
         if self.floorplan is not None:
             exchange_protruding_cells(self.floorplan, 10)
+            self.draw_floorplan()
             messagebox.showinfo("Info", "Protruding cells exchanged")
         else:
             messagebox.showwarning("Warning", "Load floorplan first")

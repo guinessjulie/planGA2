@@ -25,3 +25,11 @@ def read_config_int(filename, section, key):
 
 
 
+def read_ini_file(file_name):
+    config = configparser.ConfigParser()
+    config.read(file_name)
+    return config
+
+def write_ini_file(config, file_name):
+    with open(file_name, 'w') as configfile:
+        config.write(configfile)

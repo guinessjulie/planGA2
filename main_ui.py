@@ -3,6 +3,7 @@ from tkinter import filedialog, messagebox
 import trivial_utils  # Replace with the actual module
 import constants
 import tkinter as tk
+from tkinter import filedialog, messagebox, ttk
 from tkinter import filedialog, messagebox
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
@@ -16,6 +17,7 @@ from main import (
     run_selected_module, build_polygon, exit_module
 )
 import sys
+from Setting import SettingsApp
 
 # Press Ctrl+F5 to execute it or replace it with your code.
 # Press Double Shift to search everywhere for classes, files, tool windows, actions, and settings.
@@ -30,9 +32,10 @@ from PolygonExporter import PolygonExporter
 from measure import categorize_boundary_cells
 from plan import create_floorplan
 from cell_variation import exchange_protruding_cells
-from config_reader import read_constraint, read_config_boolean, read_config_int
+from config_reader import read_constraint, read_config_boolean, read_config_int, read_ini_file
 from trivial_utils import create_filename_with_datetime
 import constants
+import configparser
 import numpy as np
 
 from main import (
@@ -54,20 +57,17 @@ class MainApp:
         self.root = root
         self.root.title('Main')
         self.create_sample_init_grid()
-        self.num_room = read_config_int('constraints.ini', 'Numbers', 'num_rooms')
+        self.num_room = self.read_config_int('constraints.ini', 'Numbers', 'num_rooms')
         self.floorplan = None
 
-        # todo
-        self.n_pops = 10
-        self.population = []
-
         self.create_widgets()
-        # 일단 floorplan을 가져오고 그걸 모으자.
+
 
     def create_widgets(self):
-        tk.Button(self.root, text="Draw Footprint Boundary", command=self.draw_plan_base_grid).pack(pady=20)
         tk.Button(self.root, text='Open Floorplan App', command=self.open_floorplan_app).pack(pady=20)
+        tk.Button(self.root, text="Draw Footprint Boundary", command=self.draw_plan_base_grid).pack(pady=20)
         tk.Button(self.root, text="Show Floorplan", command=self.show_floorplan).pack(pady=20)
+        tk.Button(self.root, text="Settings", command=self.open_settings).pack(pady=20)
         tk.Button(self.root, text='Exit', command=self.root.quit).pack(pady=20)
 
     def create_sample_init_grid(self):
@@ -98,6 +98,17 @@ class MainApp:
             messagebox.showinfo("Info", "Floorplan not yet created")
 
 
+    def open_settings(self):
+        # Pass the PanedWindow to the SettingsApp
+        settings_root = tk.Toplevel(root)
+        settings_root.title('Settings')
+        config = read_ini_file('constraints.ini')
+        SettingsApp(settings_root, config)
+
+    def read_config_int(self, file_name, section, option):
+        config = configparser.ConfigParser()
+        config.read(file_name)
+        return config.getint(section, option)
 
 
 if __name__ == "__main__":

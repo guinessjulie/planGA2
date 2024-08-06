@@ -8,7 +8,8 @@ import plan_utils
 from GridDrawer import GridDrawer
 from measure import categorize_boundary_cells
 from config_reader import read_constraint, read_config_boolean
-from cells_utils import  is_valid_cell, is_in
+from cells_utils import  is_valid_cell, is_inside
+from plan_utils import dict_value_to_coordinates
 
 # todo 1: 사이즈 작은 사이즈일 수록 빈 인접셀 적다. 이를 이용해서 초기화에 활용
 # todo 2: 인접 리스트를 만들어서 해당 조건 만족하도록
@@ -30,9 +31,7 @@ def create_floorplan(empty_grid, k):
     full_path = trivial_utils.create_filename(path, 'Init', '', '', 'png')
     GridDrawer.color_cells_by_value(initialized_grid, full_path, display = display_process, save=save_process, num_rooms=k)
     print(f'initial_cells:{initial_cells}\n{initialized_grid}')
-    # floorplan = place_room(initialized_grid, initial_cells)
-    # floorplan = place_room(initialized_grid, initial_cells, display = display_process, save=save_process) # todo to revert if follow not working
-    floorplan = parallel_extention(initialized_grid, initial_cells, display = display_process, save=save_process, num_rooms=k)
+    floorplan = allocate_rooms(initialized_grid, initial_cells, display = display_process, save=save_process, num_rooms=k)
     return floorplan
 
 
@@ -94,35 +93,107 @@ def get_unique_values(floorplan, cells):
         unique_values.add(floorplan[cell])
     return unique_values
 
+# todo active_cells를 복사하지 않고 바로 이용
+def allocate_rooms(floorplan, obtainable_cells, display=False, save=True, num_rooms=7):
 
+    # todo 여기서는 그냥 choose만 하고, return 값은 새 셀의 좌표와 방향
+    def choose_new_adjacent_cell(floorplan, cell):
+        row, col = cell
+        rows, cols = floorplan.shape
+        # Ensure we are within the floorplan and the cell has not been colored yet
+        if floorplan[row, col] > 0:  # Adjusted condition to ensure we're targeting uncolored cells
+            valid_offsets = [(dy, dx) for dy, dx in [(-1, 0), (1, 0), (0, -1), (0, 1)]
+                             if 0 <= row + dy < rows and 0 <= col + dx < cols and floorplan[row + dy, col + dx] == 0]
+            if valid_offsets:
+                dr = random.choice(valid_offsets)
+                return (row + dr[0], col + dr[1]), dr
+        else:
+            return None, (0,0)
 
-def parallel_extention(floorplan, obtainable_cells, display=False, save=True, num_rooms=7):
+    # 0인 neighbor가 없고 즉 더이상 확장할 수 없는데 그 셀이 actie_cells 리스트에 있으면 거기서 제거
+    # 0인 네이버가 있으면 무조건 active cell에 추가
+    def update_active_cells(floorplan,cell, active_cells):
+        if not has_neighbor_zero(floorplan, cell[0], cell[1]): # not( has_neighbor_zero = 범위 안에 있고 0인 인접셀이 하나라도 있으면)
+            if cell in active_cells: # 그 셀은 더이상 active하지 않으므로 active_cells에서 제거하고
+                active_cells.remove(cell)
+        else:
+            active_cells.add(cell)
 
-    def same_room_cells(floorplan, cell):
-        return np.argwhere(floorplan == floorplan[cell])
+        # 이 셀이 더이상 확장 가능하거나 가능하지 않거나 상관없이 모든 인접셀에 대해서 다시 candidate를 구한다. if 문에서 들어가면
+        for adj_cell in all_active_neighbors(cell, floorplan):
+            if not len(collect_candidate_set(adj_cell, floorplan)) > 0:  # has no candidate
+                if adj_cell in active_cells:
+                    active_cells.remove(adj_cell)
 
+    active_cells = process_valid_cells(floorplan)
+    current_step = 0
+
+    while active_cells:
+        room_to_coordinates = dict_value_to_coordinates(floorplan)
+        room_numbers = list(range(1, num_rooms+1))
+        while room_numbers:
+            room_idx = random.randrange(len(room_numbers))
+            room = room_numbers.pop(room_idx)
+            all_cells = room_to_coordinates.get(room, [])
+            # valid한  coordsnates를 찾아라
+            current_active_cells = [c for c in all_cells if c in active_cells]
+            if not current_active_cells :
+                continue# 현재 선택된 방의 모든 valid한 셀
+            cell = random.choice(current_active_cells) #todo cannot choose from an empty sequence
+            # just pick one from each cell
+            new_cell, dr = choose_new_adjacent_cell(floorplan, cell) # todo 이 버전은 값은 안변하고 셀만 구한다. 일단 간직만 하자. 변경하는 것은 나중에
+            if new_cell is None:
+                continue
+            # assign_room
+            # 바꾸려고 하는 셀이 원래셀이 아니고, 바꿀 대상 위치가 비어있고(0) 범위 내에 있는 것만 콜렉트
+            parallel_cells =[tuple(np.add(c, dr)) for c in all_cells if
+               c != cell and floorplan[tuple(np.add(c, dr))] == 0 and is_inside(floorplan, tuple(np.add(c, dr)))]
+
+            #색칠
+            floorplan[new_cell] = floorplan[cell]
+            update_active_cells(floorplan, cell, active_cells) # todo active_cells를 잘봐
+            update_active_cells(floorplan, new_cell, active_cells)
+
+            for c in parallel_cells:
+                floorplan[c] = floorplan[cell]
+                update_active_cells(floorplan, c, active_cells)
+
+        filename, current_step = trivial_utils.create_filename_in_order('png', 'Step', current_step)
+        GridDrawer.color_cells_by_value(floorplan, filename, display=display, save=save, num_rooms=num_rooms)
+
+    floorplan = exchange_extreme_cells(floorplan)
+    filename, current_step = trivial_utils.create_filename_in_order('png', 'Reform', current_step)
+    GridDrawer.color_cells_by_value(floorplan, filename, display=display, save=save, num_rooms=num_rooms)
+
+    return floorplan
+
+# 색칠하지 말고 방향과 행렬 번호만 리턴하자.
+def parallel_extention2(floorplan, obtainable_cells, display=False, save=True, num_rooms=7):
+
+    # todo 여기서는 그냥 choose만 하고, return 값은 새 셀의 좌표와 방향
     def choose_new_adjacent_cell(floorplan, cell):
         row, col = cell
         rows, cols = floorplan.shape[0], floorplan.shape[1]
         # Ensure we are within the floorplan and the cell has not been colored yet
-        if floorplan[row, col] <= 0:  # Adjusted condition to ensure we're targeting uncolored cells
-            return False
+        if floorplan[row, col] > 0:  # Adjusted condition to ensure we're targeting uncolored cells
 
-        valid_offsets = [(dy, dx) for dy, dx in [(-1, 0), (1, 0), (0, -1), (0, 1)]
-                         if 0 <= row + dy < rows and 0 <= col + dx < cols and floorplan[row + dy, col + dx] == 0]
+            valid_offsets = [(dy, dx) for dy, dx in [(-1, 0), (1, 0), (0, -1), (0, 1)]
+                             if 0 <= row + dy < rows and 0 <= col + dx < cols and floorplan[row + dy, col + dx] == 0]
 
-        if valid_offsets:
-            dr = random.choice(valid_offsets)
-            dy, dx = dr[0], dr[1]
-            floorplan[row + dy, col + dx] = floorplan[row, col]  # Color the neighbor
-            return (row + dy, col + dx), dr
-
-        return None
+            if valid_offsets:
+                dr = random.choice(valid_offsets)
+                dy, dx = dr[0], dr[1]
+                # floorplan[row + dy, col + dx] = floorplan[row, col]  # Color the neighbor
+                return (row + dy, col + dx), dr
+        else:
+            return None, (0,0)
+    # 0인 neighbor가 없고 즉 더이상 확장할 수 없는데 그 셀이 actie_cells 리스트에 있으면 거기서 제거
+    # 0인 네이버가 있으면 무조건 active cell에 추가
     def update_active_cells(floorplan,cell, active_cells):
         if not has_neighbor_zero(floorplan, cell[0], cell[1]): # not( has_neighbor_zero = 범위 안에 있고 0인 인접셀이 하나라도 있으면)
             if cell in active_cells: # 그 셀은 더이상 active하지 않으므로 active_cells에서 제거하고
                 print(f'{cell} has not neighbor zero and in active_cells :why is this happening ')
-                active_cells.remove()
+                active_cells.remove(cell)
         else:
             active_cells.add(cell)
 
@@ -138,43 +209,45 @@ def parallel_extention(floorplan, obtainable_cells, display=False, save=True, nu
     valid_obtainable_cells = process_valid_cells(floorplan)
     current_step = 0
 
-    while valid_obtainable_cells:
-        active_cells = valid_obtainable_cells.copy()
-        num_unique_value = len(get_unique_values(floorplan, active_cells)) # 중복 제거
-        if num_unique_value > 1:
-            for cell in valid_obtainable_cells:
-                if cell in active_cells:
-                    new_cell, dr= choose_new_adjacent_cell(floorplan, cell)
-                    update_active_cells(floorplan, new_cell, active_cells)
-                    parallel_cells = list(np.argwhere(floorplan == floorplan[cell]))  # 같은 룸에서
-                    parallel_cells = [p for p in parallel_cells if not (cell[0] == p[0] and cell[1] == p[1])]
-                    print(f'{cell} parallel_cell = {parallel_cells}')
-                    for sc in parallel_cells :
-                        # 같은 방향으로 이동 가능한 것을 찾아서 모두 바꾸어준다.
+    while len(valid_obtainable_cells) > 0 :
+        room_to_coordinates = dict_value_to_coordinates(floorplan)
+        # todo 각 룸마다 하나씩 패러랠하게 추가
+        # todo room_to_coordinates로 for 문을 돌리면 같은 셀로 계속 반복하게 됨
+        #  coordinates는 나중에 룸 번호보고 다시 선택하기로 하고, iteration은 room 위에 while 문 필요함.
+        room_numbers = list(range(1, num_rooms+1))
+        while room_numbers:
+        # for room, all_cells in room_to_coordinates.items():
+            room_idx = random.randrange(len(room_numbers))
+            room = room_numbers.pop(room_idx)
+            all_cells = room_to_coordinates[room]
+            active_cells = valid_obtainable_cells.copy()
+            # valid한  coordsnates를 찾아라
+            current_active_cells = [c for c in all_cells if c in active_cells]
+            if len(current_active_cells) < 1 :
+                continue# 현재 선택된 방의 모든 valid한 셀
+            cell = random.choice(current_active_cells) #todo cannot choose from an empty sequence
+            # just pick one from each cell
+            new_cell, dr = choose_new_adjacent_cell(floorplan, cell) # todo 이 버전은 값은 안변하고 셀만 구한다. 일단 간직만 하자. 변경하는 것은 나중에
+            # assign_room
+            # 바꾸려고 하는 셀이 원래셀이 아니고, 바꿀 대상 위치가 비어있고(0) 범위 내에 있는 것만 콜렉트
+            parallel_cells =[tuple(np.add(c, dr)) for c in all_cells if
+               c is not cell and floorplan[tuple(np.add(c, dr))] == 0 and is_inside(floorplan, tuple(np.add(c, dr)))]
 
-                        new_same_room_cell = sc[0] + dr[0], sc[1] +  dr[1]
+            #색칠
+            floorplan[new_cell] = floorplan[cell]
+            update_active_cells(floorplan, cell, active_cells) # todo active_cells를 잘봐
+            update_active_cells(floorplan, new_cell, active_cells)
 
-                        if is_in(floorplan, new_same_room_cell) and  floorplan[new_same_room_cell] == 0 and (new_same_room_cell in active_cells):
-                            floorplan[new_same_room_cell] = floorplan[cell]
-                            update_active_cells(floorplan, new_same_room_cell)
-                else:
-                    continue
+            #  parallel_cells를 색칠하면 됨.
+            # 미리 구해놓은 parallel_cells 만 색칠
+            for c in parallel_cells:
+                floorplan[c] = floorplan[cell]
+                update_active_cells(floorplan, c, active_cells)
+                print(f'active_cells={active_cells}')
 
-        # 모든 active_cell들의 값이 같으면 반복하지 말고 나머지 모든 셀을 그 값으로 채운다
-        elif num_unique_value == 1:
-            unique_value = floorplan[active_cells.pop()]
-            print(f'all the active_cells having same value {unique_value}')
-            floorplan[floorplan == 0] = unique_value
-            active_cells = set()
-
-        # gridname = trivial_utils.create_filename('png', 'Step')
+            valid_obtainable_cells = active_cells.copy()
         filename, current_step = trivial_utils.create_filename_in_order('png', 'Step', current_step)
         GridDrawer.color_cells_by_value(floorplan, filename, display=display, save=save, num_rooms=num_rooms)
-
-        print(
-            f'==================\nobtainable_cells={valid_obtainable_cells} {len(valid_obtainable_cells)}\nfloorplan=\n{floorplan}')
-        valid_obtainable_cells = active_cells.copy()
-    print(f'----')
 
     floorplan = exchange_extreme_cells(floorplan)
     filename, current_step = trivial_utils.create_filename_in_order('png', 'Reform', current_step)
@@ -182,7 +255,7 @@ def parallel_extention(floorplan, obtainable_cells, display=False, save=True, nu
 
     return floorplan
 
-# commit된 것 복원
+# commit된 것 복원 old_version. parallel_extension으로 대체
 def place_room(floorplan, obtainable_cells, display = False, save = True, num_rooms=7):
     insulated_cells = set()
     # todo .1 insulated_cell 을 이용하지 않았어
@@ -687,7 +760,6 @@ def process_valid_cells(grid_assigning, insulated_cells=None, row_range=None): #
             if grid_assigning[row, col] > 0:
                 if has_neighbor_zero(grid_assigning, row, col):
                     valid_cells.add((row, col))
-    print(f'\t\tmxn iteration: process_valid_cells() global valid_cells = {valid_cells}')
     return valid_cells
 
 

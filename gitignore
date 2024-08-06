@@ -41,6 +41,8 @@ pip-log.txt
 pip-delete-this-directory.txt
 
 # Unit test / coverage reports
+testing_results/
+backup/
 htmlcov/
 .tox/
 .nox/
@@ -52,6 +54,8 @@ coverage.xml
 *.cover
 *.py,cover
 .hypothesis/
+.png
+*.png
 
 # Translations
 *.mo
@@ -123,3 +127,8 @@ dmypy.json
 .vscode/
 *.sublime-project
 *.sublime-workspace
+
+# test
+.png
+testing_results/
+backups/

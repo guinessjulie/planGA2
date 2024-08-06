@@ -193,6 +193,8 @@ def exchange_protruding_cells(floorplan, iteration=1, display=False, save=True):
                     best_room = candidate_rooms[it+1]
         elif len(candidate_rooms) == 1:
             best_room = candidate_rooms[0]
+
+
         if is_valid_change(floorplan, cell, best_room, changed_cell_history): # 성공했다면
             update_cascading(floorplan,cell, neighbors, cascading_cells_list, cascading_cells)
             # candidate_cascading_cells_list.remove(cell)
@@ -200,6 +202,12 @@ def exchange_protruding_cells(floorplan, iteration=1, display=False, save=True):
                     f'cascading({len(cascading_cells_list)}) = {cascading_cells_list}')
         else:
             candidate_rooms.remove(best_room)  # valid 하지 않으므로 지우고 다른 걸 선택한다.
+            # todo to avoid infinite loop 현재 안되는 것을 history에 추가
+            if cell not in changed_cell_history:
+                changed_cell_history[cell] = [best_room]
+            else:
+                changed_cell_history[cell].append(best_room)
+
             text = (f'Step {i} Failed to change {cell} from {current_room_number} to {best_room}\n'
                     f'becuase ( {cell} to {best_room}) is not valid change')
 

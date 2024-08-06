@@ -5,6 +5,7 @@ from matplotlib.colors import ListedColormap, Normalize, BoundaryNorm
 import numpy as np
 import textwrap
 from constants import UNIT_SCALE
+from config_reader import read_config_int
 class GridDrawer:
 
     @staticmethod
@@ -97,10 +98,10 @@ class GridDrawer:
         # Get the unique room identifiers and their corresponding colors
         rooms = np.unique(padded_grid)
         colors = {
-            0: 'white', 1: 'red', 2: 'blue', 3: 'yellow',
-            4: 'cyan', 5: 'green', -1: 'gray'
+            0: 'white', 1: 'red', 2: 'green', 3: 'blue', 4: 'yellow',
+            5: 'cyan', 6: 'magenta', 7: 'purple', 8:'orange', 9:'lime', 10:'pink' ,
+            -1: 'white'
         }
-
         # Plot each room with the corresponding color
         for room in rooms:
             if room != -1:  # Ignore external space
@@ -268,17 +269,11 @@ class GridDrawer:
 
     @staticmethod
     def draw_plan_equal_thickness(grid):
-        # Define the new grid structure
-        # grid = np.array([
-        #     [2, 2, 5, 5, 5, -1, -1],
-        #     [2, 2, 4, 4, 1, 3, 3],
-        #     [2, 2, 4, 4, 1, 1, -1],
-        #     [-1, -1, 4, 4, -1, -1, -1]
-        # ])
-
-        # Define the scale
+        # get  the scale
         scale = 1000  # 1 unit = 1000mm
         wall_thickness = 5  # Wall thickness in mm
+        scale = read_config_int('constraints.ini','Metrics',  'scale')
+        wall_thickness = read_config_int('constraints.ini','Metrics','wall_thickness')
 
         # Create a plot
         fig, ax = plt.subplots()
@@ -287,8 +282,9 @@ class GridDrawer:
         rooms = np.unique(grid)
 
         colors = {
-            0: 'white', 1: 'red', 2:'green', 3: 'blue', 4: 'yellow',
-            5: 'cyan', 6: 'magenta', 7: 'purple', 8: 'orange', 9:'lime', 10:'pink', -1: 'gray'
+            0: 'white', 1: 'red', 2: 'green', 3: 'blue', 4: 'yellow',
+            5: 'cyan', 6: 'magenta', 7: 'purple', 8:'orange', 9:'lime', 10:'pink' ,
+            -1: 'white'
         }
 
         # Plot each room with the corresponding color
@@ -426,7 +422,7 @@ class GridDrawer:
         # 데이터 값의 범위에 따른 경계값 설정 (여기서는 -1에서 5까지)
         # boundaries = [-1.5, -0.5, 0.5, 1.5, 2.5, 3.5, 4.5, 5.5]
         boundaries =  generate_boundaries(num_rooms)
-        print(f'num_rooms={num_rooms}, boundaries = {boundaries}')
+        # print(f'num_rooms={num_rooms}, boundaries = {boundaries}')
         norm = BoundaryNorm(boundaries, cmap.N)
 
         # matshow로 데이터 시각화
@@ -434,8 +430,13 @@ class GridDrawer:
         cax = ax.matshow(grid, cmap=cmap, norm=norm)
         # fig.colorbar(cax, ticks=range(7))
         # todo d위에 텍스트를 적기 위해 아래쪽으로 컬러바를 옮겼다. orientation과 shirink옵션 추가됨. 나중에 필요하면 제거
-        colorbar = fig.colorbar(cax, shrink=0.8, ticks=[0, 1, 2, 3, 4, 5])
-        colorbar.set_ticklabels(['OUT', '1', '2', '3', '4', '5'])
+        # colorbar = fig.colorbar(cax, shrink=0.8, ticks=[0, 1, 2, 3, 4, 5])
+        # colorbar.set_ticklabels(['OUT', '1', '2', '3', '4', '5'])
+        ticks = list(range(1, num_rooms+3))
+        tick_labels =  [str(i) for i in list(range(1, num_rooms+3))]
+        # print(f'ticks{ticks},tick_labels={tick_labels}')
+        colorbar = fig.colorbar(cax, shrink=0.8, ticks=ticks)
+        colorbar.set_ticklabels(tick_labels)
         # tick label의 크기와 방향 조정
 
         # 하단 여백을 조정하여 텍스트를 추가할 공간 확보
@@ -446,9 +447,10 @@ class GridDrawer:
 
         if save:
             plt.savefig(filename)
-            print(f'{filename} with {text} saved')
+            #  print(f'{filename} with {text} saved')
         if display:
             plt.show()
+        plt.close()
         return fig
 
     @staticmethod
@@ -502,7 +504,7 @@ class GridDrawer:
         #     plt.figtext(0.5, -0.1, text, ha='center', fontsize=12)
         if save:
             plt.savefig(filename)
-            print(f'{filename} with {text} saved')
+           #  print(f'{filename} with {text} saved')
         if display:
             plt.show()
         plt.close()

@@ -5,6 +5,18 @@ import numpy as np
 
 ####################################################################################
 
+def dict_value_to_coordinates(floorplan):
+
+    # 딕셔너리 초기화
+    value_to_coordinates = {}
+
+    # 각 값의 좌표를 찾아서 딕셔너리에 추가
+    for value in range(1, np.max(floorplan) + 1):
+        coordinates = np.argwhere(floorplan == value)
+        value_to_coordinates[value] = [tuple(coord) for coord in coordinates]
+
+    return value_to_coordinates
+
 def get_color_coordinates(grid):
     """
     그리드에서 각 색상별로 해당 색상의 좌표를 리스트로 반환하는 함수.
@@ -38,6 +50,9 @@ def get_color_at(grid, row, col):
         return grid[row][col]
     else:
         return None
+
+def same_room_cells(floorplan, cell):
+    return np.argwhere(floorplan == floorplan[cell])
 
 
 # 좌표를 그리드로 변환
