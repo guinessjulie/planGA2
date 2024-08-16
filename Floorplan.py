@@ -1,41 +1,16 @@
 import tkinter as tk
-from tkinter import filedialog, messagebox
-import trivial_utils  # Replace with the actual module
-import constants
-import tkinter as tk
-from tkinter import filedialog, messagebox
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-
 from tkinter import filedialog, messagebox
-import trivial_utils  # Replace with the actual module
-import constants
-from main import (
-    get_floorplan, GridDrawer, exchange_protruding_cells,
-    categorize_boundary_cells, GraphBuilder, GraphDrawer,
-    run_selected_module, build_polygon, exit_module
-)
-import sys
+import trivial_utils
+from main import GridDrawer, exchange_protruding_cells, categorize_boundary_cells, GraphBuilder, GraphDrawer, run_selected_module, build_polygon, exit_module
+from plan import create_floorplan, locate_initial_cell
 
 # Press Ctrl+F5 to execute it or replace it with your code.
 # Press Double Shift to search everywhere for classes, files, tool windows, actions, and settings.
-import file_trans
-import planB
-from plan_utils import grid_to_coordinates, expand_grid
-import trivial_utils
-from GraphClass import GridGraph, GraphDrawer, GraphBuilder
-from GridDrawer import GridDrawer
-from GridPolygon import GridPolygon
-from PolygonExporter import PolygonExporter
-from measure import categorize_boundary_cells
-from plan import create_floorplan
-from cell_variation import exchange_protruding_cells
-from config_reader import read_constraint, read_config_boolean, read_config_int
-from trivial_utils import create_filename_with_datetime
-import constants
-import numpy as np
-from main import GridDrawer, create_floorplan, exchange_protruding_cells, categorize_boundary_cells, GraphBuilder, GraphDrawer, run_selected_module, build_polygon, exit_module
 
+# todo 1. show simplify
+# todo 2. draw plan equal thickness show option
 class FloorplanApp:
     def __init__(self, root, init_grid, num_rooms, callback):
         self.root = root
@@ -45,31 +20,62 @@ class FloorplanApp:
         self.num_rooms = num_rooms
         self.callback = callback  # Main App으로 floorplan을 반환하기 위한 콜백 함수
         self.floorplan = None
-
+        self.simlified_floorplan = None
+        self.seed = None
+        self.initial_cells = None
         self.create_widgets()
         self.path = None
 
     def create_widgets(self):
+        # 왼쪽 프레임 생성 및 배치
         left_frame = tk.Frame(self.root)
         left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        # 오른쪽 프레임 생성 및 배치
         right_frame = tk.Frame(self.root)
         right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
 
-        tk.Button(left_frame, text="Create Initial Floorplan", command=self.initialize_floorplan).pack(pady=5)
-        tk.Button(left_frame, text="Draw Floorplan", command=self.draw_floorplan).pack(pady=5)
-        tk.Button(left_frame, text="Simplify Floorplan", command=self.exchange_cells).pack(pady=5)
-        tk.Button(left_frame, text="Draw Plan Equal Thickness", command=self.draw_equal_thickness).pack(pady=5)
-        tk.Button(left_frame, text='Return Floorplan', command=self.return_floorplan).pack(pady=5)
-        tk.Button(left_frame, text="Exit", command=self.root.quit).pack(pady=20)
+        # 오른쪽 프레임을 상하 두 개의 하위 프레임으로 나누기
+        left_right_frame = tk.Frame(right_frame)
+        left_right_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-        self.canvas = tk.Canvas(right_frame, width=800, height=600)
-        self.canvas.pack(fill=tk.BOTH, expand=True)
+        right_right_frame = tk.Frame(right_frame)
+        right_right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+
+        # 버튼의 너비 설정
+        button_width = 20
+
+        # 버튼 리스트
+        buttons = [
+            ("Initial Room Location", self.initialize_room_location),
+            ('Create Floorplan', self.initialize_floorplan),
+            ("Draw Floorplan", self.draw_floorplan),
+            ("Simplify Floorplan", self.exchange_cells),
+            ("Draw Plan Equal Thickness", self.draw_equal_thickness),
+            ("Return Floorplan", self.return_floorplan),
+            ("Exit", self.root.quit),
+        ]
+
+        # 버튼들을 왼쪽 프레임에 추가
+        for text, command in buttons:
+            tk.Button(left_frame, text=text, command=command, width=button_width).pack(pady=5, padx=5, fill=tk.X)
+
+        # 상단 캔버스 생성 및 배치 (초기 셀 배치용)
+        self.initial_canvas = tk.Canvas(left_right_frame, width=800, height=300)
+        self.initial_canvas.pack(fill=tk.BOTH, expand=True)
+
+        # 하단 캔버스 생성 및 배치 (결과 Floorplan 디스플레이용)
+        self.final_canvas = tk.Canvas(right_right_frame, width=800, height=300)
+        self.final_canvas.pack(fill=tk.BOTH, expand=True)
 
 
-    def show_plot_on_canvas(self, fig):
-        for widget in self.canvas.winfo_children():
+
+
+
+    def show_plot_on_canvas(self, fig, target_canvas):
+        for widget in target_canvas.winfo_children():
             widget.destroy()
-        canvas = FigureCanvasTkAgg(fig, master=self.canvas)
+        canvas = FigureCanvasTkAgg(fig, master=target_canvas)
         canvas.draw()
         canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
         plt.close(fig)
@@ -81,26 +87,41 @@ class FloorplanApp:
         else:
             messagebox.showwarning("Warning", "Create the floorplan first")
 
-    def initialize_floorplan(self):
+    def initialize_room_location(self):
         if self.init_grid is not None:
-            self.floorplan = create_floorplan(self.init_grid, self.num_rooms)
-            self.draw_floorplan()
+            self.seed, self.initial_cells = locate_initial_cell(self.init_grid, self.num_rooms)
+            self.draw_floorplan(self.seed, self.initial_canvas)
+        else:
+            messagebox.showwarning('Error', 'init_grid is not given')
+
+    def initialize_floorplan(self):
+        if self.seed is not None:
+            self.floorplan, self.initial_cells  = create_floorplan(self.seed, self.initial_cells, self.num_rooms)
+            if self.floorplan is not None:
+                self.draw_floorplan(self.floorplan, self.final_canvas)
+            else:
+                messagebox.showwarning('Error', 'Initialize_room_location First. No possible seed for Adjacency Constraint')
+        else:
+            messagebox.showwarning('Error', 'init_grid is None')
 
     def create_path(self):
         self.path = trivial_utils.create_folder_by_datetime()  # todo test
         self.full_path = trivial_utils.create_filename(self.path, 'Plan', '', '', 'png')
 
-    def draw_floorplan(self):
+    # todo place canvas parameter to all calling function
+    def draw_floorplan(self, floorplan, canvas ):
         self.create_path()
-        if self.floorplan is not None:
-            fig = GridDrawer.color_cells_by_value(self.floorplan, self.full_path, display=False, save=True, num_rooms = self.num_rooms)
-            self.show_plot_on_canvas(fig)
+        if floorplan is not None:
+            fig = GridDrawer.color_cells_by_value(floorplan, self.full_path, display=False, save=True, num_rooms = self.num_rooms)
+            self.show_plot_on_canvas(fig, canvas)
         else:
             messagebox.showwarning("Warning", "Create Floorplan First")
 
-    def draw_equal_thickness(self):
-        if self.floorplan is not None:
-            GridDrawer.draw_plan_equal_thickness(self.floorplan)
+    def draw_equal_thickness(self, floorplan):
+        if floorplan is not None:
+            full_path = trivial_utils.create_filename(self.path, 'Floorplan', '', '', 'png')
+            fig = GridDrawer.draw_plan_equal_thickness(floorplan, full_path, display=False, save=True, num_rooms=self.num_rooms)
+            self.show_plot_on_canvas(fig, self.final_canvas)
         else:
             messagebox.showwarning("Warning", "Load floorplan first")
 
@@ -114,8 +135,7 @@ class FloorplanApp:
     def exchange_cells(self):
         if self.floorplan is not None:
             exchange_protruding_cells(self.floorplan, 10)
-            self.draw_floorplan()
-            messagebox.showinfo("Info", "Protruding cells exchanged")
+            self.draw_floorplan(self.floorplan, self.final_canvas)
         else:
             messagebox.showwarning("Warning", "Load floorplan first")
 
@@ -163,3 +183,26 @@ class FloorplanApp:
             messagebox.showinfo("Info", "Polygon built")
         else:
             messagebox.showwarning("Warning", "Load floorplan first")
+
+    def create_widgets_save(self):
+        left_frame = tk.Frame(self.root)
+        left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        right_frame = tk.Frame(self.root)
+        right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+
+        button_width = 20
+
+        buttons = [
+            ("Create Initial Floorplan", self.initialize_floorplan),
+            ("Draw Floorplan", self.draw_floorplan),
+            ("Simplify Floorplan", self.exchange_cells),
+            ("Draw Plan Equal Thickness", self.draw_equal_thickness),
+            ("Return Floorplan", self.return_floorplan),
+            ("Exit", self.root.quit),
+        ]
+
+        for text, command in buttons:
+            tk.Button(left_frame, text=text, command=command, width=button_width).pack(pady=5, padx=5, fill=tk.X)
+
+        self.canvas = tk.Canvas(right_frame, width=800, height=600)
+        self.canvas.pack(fill=tk.BOTH, expand=True)

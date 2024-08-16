@@ -1,15 +1,18 @@
 import random
 import sys
 
+import networkx as nx
 from scipy.sparse import lil_matrix
 import trivial_utils
 import numpy as np
 import plan_utils
 from GridDrawer import GridDrawer
+import itertools
 from measure import categorize_boundary_cells
-from config_reader import read_constraint, read_config_boolean
+from config_reader import read_constraint, read_config_boolean, read_str_constraints
 from cells_utils import  is_valid_cell, is_inside
 from plan_utils import dict_value_to_coordinates
+import ast
 
 # todo 1: 사이즈 작은 사이즈일 수록 빈 인접셀 적다. 이를 이용해서 초기화에 활용
 # todo 2: 인접 리스트를 만들어서 해당 조건 만족하도록
@@ -18,21 +21,49 @@ from plan_utils import dict_value_to_coordinates
 # todo 5: 인접조건 neighbor 갯수가 가장 많은 것을 living room으로? 그래프 구조 활용
 # todo 6: Graph의 구조가 같은지를 체크할 수 있도록 GraphGrid에 equality function들을 만들었다. 이를 활용해서 인접성 리스트를 optimize 하자
 
+def check_adjacent_requirement(ini_filename):
+    section = 'AdjacencyRequirements'
+    edges_str = read_str_constraints(ini_filename,section )
 
-def create_floorplan(empty_grid, k):
-    orientation_requirements=read_constraint('constraints.ini', 'OrientationRequirements')
-    display_process = read_config_boolean('constraints.ini', 'RunningOptions', 'display_place_room_process')
-    save_process = read_config_boolean('constraints.ini', 'RunningOptions', 'save_place_room_process')
+    adjacency_list = ast.literal_eval(edges_str['adjacent'])  # TO LIST
+    return adjacency_list
 
-    initialized_grid, initial_cells = place_k_rooms_on_grid(to_np_array(empty_grid), k)
-    initialized_grid, cells_coords = relocate_by_orientation(initialized_grid, initial_cells, orientation_requirements)
-    print(f'initialized_grid={initialized_grid}')
+
+def create_req_graph(adjacency_list):
+    adjacency_graph = nx.Graph()
+    adjacency_graph.add_edges_from(adjacency_list)
+    if not nx.check_planarity(adjacency_graph):
+        return False
+    return adjacency_graph
+
+def locate_initial_cell(empty_grid, k):
+    ini_filename = 'constraints.ini'
+    adjacency_list = check_adjacent_requirement(ini_filename)
+    initialized_grid, initial_cells = place_seed(to_np_array(empty_grid), k, adjacency_list )
+    return initialized_grid, initial_cells
+
+def create_floorplan(initialized_grid,initial_cells, k):
+    ini_filename = 'constraints.ini'
+
+
+    orientation_requirements=read_constraint(ini_filename, 'OrientationRequirements')
+    display_process = read_config_boolean(ini_filename, 'RunningOptions', 'display_place_room_process')
+    save_process = read_config_boolean(ini_filename, 'RunningOptions', 'save_place_room_process')
+    # todo 20240814 room_number 가 언제 할당되나 조사
+    # initialized_grid, initial_cells = place_k_rooms_on_grid(to_np_array(empty_grid), k) # todo place_seed에서 그래프 만족시키는 seed 새로 만듦
     path = trivial_utils.create_folder_by_datetime()
-    full_path = trivial_utils.create_filename(path, 'Init', '', '', 'png')
+    full_path = trivial_utils.create_filename(path, 'Init0', '', '', 'png')
+    GridDrawer.color_cells_by_value(initialized_grid, full_path, display=display_process, save=save_process,
+                                    num_rooms=k)
+
+    initialized_grid, initial_cells = relocate_by_orientation(initialized_grid, initial_cells, orientation_requirements)
+    full_path = trivial_utils.create_filename(path, 'Init1', '', '', 'png')
+    print(f'adjacency considered={initialized_grid}')
     GridDrawer.color_cells_by_value(initialized_grid, full_path, display = display_process, save=save_process, num_rooms=k)
-    print(f'initial_cells:{initial_cells}\n{initialized_grid}')
+    print(f'relocated:{initial_cells}\n{initialized_grid}')
+
     floorplan = allocate_rooms(initialized_grid, initial_cells, display = display_process, save=save_process, num_rooms=k)
-    return floorplan
+    return floorplan, initial_cells
 
 
 #  현재 셀이 valid 한가
@@ -650,71 +681,132 @@ def place_k_rooms_on_grid(grid_arr, k):
             cells_coords.add((row, col))
             rooms_placed += 1
 
-    return rooming_grid, cells_coords
+    return rooming_grid, cells_coords,
 
 
+def manhattan_distance(cell1, cell2):
+    """
+    두 점 사이의 맨해튼 거리를 계산합니다.
+    """
+    return abs(cell1[0] - cell2[0]) + abs(cell1[1] - cell2[1])
 
-def relocate_by_orientation(grid, cells_coords, orientation_requirements):
-    def is_position_correct(cell_positions, color, position):
-        row, col = position
-        orientation = orientation_requirements[color]
 
-        for other_color, other_position in cell_positions.items():
-            if other_color == color:
-                continue
-            other_row, other_col = other_position
+def find_closest_pairs(room_cell_dict):
+    distances = []
+    for (room1, seed1), (room2, seed2) in itertools.combinations(room_cell_dict.items(), 2):
+        distance = manhattan_distance(seed1, seed2)
+        distances.append(((room1, room2), distance))
+    distances.sort(key=lambda x: x[1])
 
-            if orientation == 'north' and row > other_row:
-                return False
-            if orientation == 'south' and row < other_row:
-                return False
-            if orientation == 'east' and col < other_col:
-                return False
-            if orientation == 'west' and col > other_col:
-                return False
-        return True
+    return distances
 
-    def swap_positions(grid, pos1, pos2):
-        grid[pos1[0], pos1[1]], grid[pos2[0], pos2[1]] = grid[pos2[0], pos2[1]], grid[pos1[0], pos1[1]]
 
-    def find_extreme_positions(cells_coords):
-        north = min(cells_coords, key=lambda x: x[0])
-        south = max(cells_coords, key=lambda x: x[0])
-        west = min(cells_coords, key=lambda x: x[1])
-        east = max(cells_coords, key=lambda x: x[1])
-        return north, south, west, east
+def place_seed(grid_arr, k, adjacency_graph):
+    # Randomly place k rooms within the floorplan
+    rooms_placed = 0
+    cells_coords = set()
+    rooming_grid = grid_arr.copy()
+    m, n = grid_arr.shape
+    room_cell_dict = dict()
+    while rooms_placed < k:
+        row, col = random.randint(0, m - 1), random.randint(0, n - 1)
+        if rooming_grid[row, col] == 0:  # Ensure the cell is within the floorplan and unroomed
+            rooms_placed += 1
+            rooming_grid[row, col] = rooms_placed
+            cells_coords.add((row, col))
+            room_cell_dict[rooms_placed] = (row, col)
+
+
+# todo reassign_seeds_based_on_proximity에서 동일 셀에게 다른 룸을 부여하는 문제가 생김 그래서 일단 이것은 스킵하고 나중에 다시
+#    closest_room_pairs = find_closest_pairs(room_cell_dict)
+#    room_cell_dict = reassign_seeds_based_on_proximity(closest_room_pairs, adjacency_graph, room_cell_dict)
+#   for room_num, pos in room_cell_dict.items():
+#        rooming_grid[pos] = room_num
+
+
+    return rooming_grid, room_cell_dict
+
+# todo 이것은 제대로 동작하지 않는다. 나중에 다시 보도록 합시다.
+def reassign_seeds_based_on_proximity(closest_room_pairs, adjacency_requirements, room_seeds):
+    new_seeds = room_seeds.copy()
+    used_rooms = set()
+
+    for (req_room1, req_room2) in adjacency_requirements:
+        for (close_room1, close_room2), _ in closest_room_pairs:
+            if close_room1 not in used_rooms and close_room2 not in used_rooms:
+                # 인접 요구사항과 가장 가까운 방 쌍을 매칭
+                if (req_room1, req_room2) == (close_room1, close_room2) or (req_room2, req_room1) == (close_room1, close_room2):
+                    new_seeds[req_room1], new_seeds[req_room2] = new_seeds[close_room1], new_seeds[close_room2]
+                    used_rooms.add(req_room1)
+                    used_rooms.add(req_room2)
+                    break
+                # 위치 교환
+                elif req_room1 == close_room1 or req_room2 == close_room2:
+                    new_seeds[req_room1], new_seeds[req_room2] = new_seeds[close_room2], new_seeds[close_room1]
+                    used_rooms.add(req_room1)
+                    used_rooms.add(req_room2)
+                    break
+
+    return new_seeds
+
+
+def is_position_correct(cell_positions, color, position, orientation_requirements):
+    row, col = position
+    orientation = orientation_requirements[color]
+
+    for other_color, other_position in cell_positions.items():
+        if other_color == color:
+            continue
+        other_row, other_col = other_position
+
+        if orientation == 'north' and row > other_row:
+            return False
+        if orientation == 'south' and row < other_row:
+            return False
+        if orientation == 'east' and col < other_col:
+            return False
+        if orientation == 'west' and col > other_col:
+            return False
+    return True
+
+def swap_positions(grid, pos1, pos2):
+    grid[pos1[0], pos1[1]], grid[pos2[0], pos2[1]] = grid[pos2[0], pos2[1]], grid[pos1[0], pos1[1]]
+
+def find_extreme_positions(cells_coords):
+    minx = min(pos[0] for pos in cells_coords.values())
+    norths ={room_no:pos for room_no, pos in cells_coords.items() if pos[0] == minx}
+    maxx = max(pos[0] for pos in cells_coords.values())
+    souths ={room_no:pos for room_no, pos in cells_coords.items() if pos[0] == maxx}
+    miny = min(pos[1] for pos in cells_coords.values())
+    wests ={room_no:pos for room_no, pos in cells_coords.items() if pos[1] == miny}
+    maxy = max(pos[1] for pos in cells_coords.values())
+    easts ={room_no:pos for room_no, pos in cells_coords.items() if pos[1] == maxy}
+
+    return norths, souths, wests, easts
+def relocate_by_orientation(grid, cell_positions, orientation_requirements):
+
+    norths, souths, wests, easts = find_extreme_positions(cell_positions)
+    direction_to_list = {
+        "north": norths,
+        "south": souths,
+        "east": easts,
+        "west": wests
+    }
 
     m, n = grid.shape
     new_grid = np.copy(grid)
-    cell_positions = {grid[row, col]: (row, col) for row, col in cells_coords}
+    # cell_positions = {grid[row, col]: (row, col) for row, col in cells_coords.items()}
 
-    any_changes = True
-    while any_changes:
-        any_changes = False
-        north, south, west, east = find_extreme_positions(cell_positions.values())
+    for room_num, ot_req  in orientation_requirements.items():
+        cell_list_on_direction = direction_to_list[ot_req] #norths, souths, easts, wests 중 하나
+        if room_num not in cell_list_on_direction.keys(): # 만일 room_num의 constraint가 south인데 room_num이 souths에 없다면 souths 중 하나를 찾아서 swap
+            new_room_num, new_pos = random.choice(list(cell_list_on_direction.items()))
+            swap_positions(grid, cell_positions[room_num], new_pos)
+            current_pos = cell_positions[room_num]
+            cell_positions[room_num] = new_pos
+            cell_positions[new_room_num] = current_pos
 
-        for color, position in list(cell_positions.items()):
-            if color in orientation_requirements:
-                if not is_position_correct(cell_positions, color, position):
-                    if position == north:
-                        new_position = (position[0] - 1, position[1])  # Move north
-                    elif position == south:
-                        new_position = (position[0] + 1, position[1])  # Move south
-                    elif position == east:
-                        new_position = (position[0], position[1] + 1)  # Move east
-                    elif position == west:
-                        new_position = (position[0], position[1] - 1)  # Move west
-                    else:
-                        continue
-
-                    if (0 <= new_position[0] < m and 0 <= new_position[1] < n and
-                            new_grid[new_position[0], new_position[1]] == 0):
-                        swap_positions(new_grid, position, new_position)
-                        cell_positions[color] = new_position
-                        any_changes = True
-
-    new_cells_coords = set(cell_positions.values())
-    return new_grid, new_cells_coords
+    return grid, cell_positions
 
 
 def to_np_array(grid):

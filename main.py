@@ -13,7 +13,7 @@ from GridPolygon import GridPolygon
 from PolygonExporter import PolygonExporter
 from measure import categorize_boundary_cells
 from plan import create_floorplan
-from cell_variation import exchange_protruding_cells
+from simplify import exchange_protruding_cells
 
 from trivial_utils import create_filename_with_datetime
 import constants

@@ -39,7 +39,7 @@ class MainApp:
         self.root = root
         self.root.title = 'Main'
         self.create_sample_init_grid()
-        self.num_room = read_config_int('constraints.ini', 'Numbers','num_rooms''')
+        self.num_room = read_config_int('constraints.ini', 'Metrics','num_rooms''')
         self.floorplan = None
 
         # todo

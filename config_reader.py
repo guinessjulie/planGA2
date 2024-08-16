@@ -15,6 +15,15 @@ def read_constraint(filename, section):
         for key, value in config.items(section):
             constraints[int(key)] = value
     return constraints
+
+def read_str_constraints(filename, section):
+    config = configparser.ConfigParser()
+    config.read(filename)
+    constraints = {}
+    if section in config:
+        for key, value in config.items(section):
+            constraints[key] = value
+    return constraints
 def read_config_boolean(filename, section, key):
     config = load_config(filename)
     return config.getboolean(section, key)
@@ -33,3 +42,11 @@ def read_ini_file(file_name):
 def write_ini_file(config, file_name):
     with open(file_name, 'w') as configfile:
         config.write(configfile)
+
+def get_room_names():
+    config = read_ini_file('constraints.ini')
+    room_names = {}
+    if config.has_section('RoomNames'):
+        for room_number, room_name in config.items('RoomNames'):
+            room_names[int(room_number)] = room_name
+        return room_names

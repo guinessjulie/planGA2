@@ -31,7 +31,7 @@ from GridPolygon import GridPolygon
 from PolygonExporter import PolygonExporter
 from measure import categorize_boundary_cells
 from plan import create_floorplan
-from cell_variation import exchange_protruding_cells
+from simplify import exchange_protruding_cells
 from config_reader import read_constraint, read_config_boolean, read_config_int, read_ini_file
 from trivial_utils import create_filename_with_datetime
 import constants
@@ -57,18 +57,19 @@ class MainApp:
         self.root = root
         self.root.title('Main')
         self.create_sample_init_grid()
-        self.num_room = self.read_config_int('constraints.ini', 'Numbers', 'num_rooms')
+        self.num_room = self.read_config_int('constraints.ini', 'Metrics', 'num_rooms')
         self.floorplan = None
 
         self.create_widgets()
 
 
     def create_widgets(self):
-        tk.Button(self.root, text='Open Floorplan App', command=self.open_floorplan_app).pack(pady=20)
-        tk.Button(self.root, text="Draw Footprint Boundary", command=self.draw_plan_base_grid).pack(pady=20)
-        tk.Button(self.root, text="Show Floorplan", command=self.show_floorplan).pack(pady=20)
-        tk.Button(self.root, text="Settings", command=self.open_settings).pack(pady=20)
-        tk.Button(self.root, text='Exit', command=self.root.quit).pack(pady=20)
+        button_width = 20
+        tk.Button(self.root, text='Open Floorplan App', command=self.open_floorplan_app, width=button_width).pack(pady=5, padx=5, fill=tk.X)
+        tk.Button(self.root, text="Draw Footprint Boundary", command=self.draw_plan_base_grid, width=button_width).pack(pady=5, padx=5, fill=tk.X)
+        tk.Button(self.root, text="Show Floorplan", command=self.show_floorplan, width=button_width).pack(pady=5, padx=5, fill=tk.X)
+        tk.Button(self.root, text="Settings", command=self.open_settings, width=button_width).pack(pady=5, padx=5, fill=tk.X)
+        tk.Button(self.root, text='Exit', command=self.root.quit, width=button_width).pack(pady=20, padx=5, fill=tk.X)
 
     def create_sample_init_grid(self):
         # 임시 예제 데이터

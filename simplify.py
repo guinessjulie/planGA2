@@ -214,7 +214,7 @@ def exchange_protruding_cells(floorplan, iteration=1, display=False, save=True):
         grid_print_as_int(cascading_cells)
 
         full_path = trivial_utils.create_file_name_in_path(path = save_path,  prefix = 'Simplifying', postfix_number=i )
-        num_rooms = read_config_int('constraints.ini', 'Numbers', 'num_rooms')
+        num_rooms = read_config_int('constraints.ini', 'Metrics', 'num_rooms')
 
         GridDrawer.color_cells_by_value(floorplan, filename=full_path, text=text, display=display, save=save, num_rooms = num_rooms)
         # grid_to_screen_image(floorplan, no=i, format='png', prefix = filename , text = text)

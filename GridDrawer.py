@@ -5,7 +5,7 @@ from matplotlib.colors import ListedColormap, Normalize, BoundaryNorm
 import numpy as np
 import textwrap
 from constants import UNIT_SCALE
-from config_reader import read_config_int
+from config_reader import read_config_int, get_room_names
 class GridDrawer:
 
     @staticmethod
@@ -268,7 +268,7 @@ class GridDrawer:
         plt.show()
 
     @staticmethod
-    def draw_plan_equal_thickness(grid):
+    def draw_plan_equal_thickness(grid,  path, display=False, save=True, num_rooms=7):
         # get  the scale
         scale = 1000  # 1 unit = 1000mm
         wall_thickness = 5  # Wall thickness in mm
@@ -339,7 +339,12 @@ class GridDrawer:
 
         # Display the plot
         plt.gca().invert_yaxis()
-        plt.show()
+        if display:
+            plt.show()
+        if save:
+            plt.savefig(path)
+
+        return fig
 
     @staticmethod
     def plot_colored_grid(grid, filename,  display=False, save=True):
@@ -420,24 +425,23 @@ class GridDrawer:
         cmap = ListedColormap(colors[:num_rooms+2])
 
         # 데이터 값의 범위에 따른 경계값 설정 (여기서는 -1에서 5까지)
-        # boundaries = [-1.5, -0.5, 0.5, 1.5, 2.5, 3.5, 4.5, 5.5]
         boundaries =  generate_boundaries(num_rooms)
-        # print(f'num_rooms={num_rooms}, boundaries = {boundaries}')
         norm = BoundaryNorm(boundaries, cmap.N)
 
         # matshow로 데이터 시각화
         fig, ax = plt.subplots()
         cax = ax.matshow(grid, cmap=cmap, norm=norm)
-        # fig.colorbar(cax, ticks=range(7))
+
+        # 룸번호와 룸이름의 매핑을 가져오는 부분 추가
+        room_names = get_room_names()
+
         # todo d위에 텍스트를 적기 위해 아래쪽으로 컬러바를 옮겼다. orientation과 shirink옵션 추가됨. 나중에 필요하면 제거
-        # colorbar = fig.colorbar(cax, shrink=0.8, ticks=[0, 1, 2, 3, 4, 5])
-        # colorbar.set_ticklabels(['OUT', '1', '2', '3', '4', '5'])
         ticks = list(range(1, num_rooms+3))
         tick_labels =  [str(i) for i in list(range(1, num_rooms+3))]
-        # print(f'ticks{ticks},tick_labels={tick_labels}')
+        tick_labels = [room_names.get(i, str(i)) for i in ticks]
+
         colorbar = fig.colorbar(cax, shrink=0.8, ticks=ticks)
         colorbar.set_ticklabels(tick_labels)
-        # tick label의 크기와 방향 조정
 
         # 하단 여백을 조정하여 텍스트를 추가할 공간 확보
         plt.subplots_adjust(bottom=0.2)
@@ -447,7 +451,6 @@ class GridDrawer:
 
         if save:
             plt.savefig(filename)
-            #  print(f'{filename} with {text} saved')
         if display:
             plt.show()
         plt.close()
@@ -487,6 +490,8 @@ class GridDrawer:
         cax = ax.matshow(grid, cmap=cmap, norm=norm)
         # fig.colorbar(cax, ticks=range(7))
         # todo d위에 텍스트를 적기 위해 아래쪽으로 컬러바를 옮겼다. orientation과 shirink옵션 추가됨. 나중에 필요하면 제거
+
+
         colorbar = fig.colorbar(cax, shrink=0.8,ticks=[-1, 0, 1, 2, 3, 4, 5])
         colorbar.set_ticklabels(['OUT','OUT','1', '2', '3', '4', '5'])
         # tick label의 크기와 방향 조정
