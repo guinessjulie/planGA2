@@ -39,14 +39,16 @@ def create_req_graph(adjacency_list):
 def locate_initial_cell(empty_grid, k):
     ini_filename = 'constraints.ini'
     adjacency_list = check_adjacent_requirement(ini_filename)
+    orientation_requirements = read_constraint(ini_filename, 'OrientationRequirements')
     initialized_grid, initial_cells = place_seed(to_np_array(empty_grid), k, adjacency_list )
+    initialized_grid, initial_cells = relocate_by_orientation(initialized_grid, initial_cells, orientation_requirements)
     return initialized_grid, initial_cells
 
 def create_floorplan(initialized_grid,initial_cells, k):
     ini_filename = 'constraints.ini'
 
 
-    orientation_requirements=read_constraint(ini_filename, 'OrientationRequirements')
+
     display_process = read_config_boolean(ini_filename, 'RunningOptions', 'display_place_room_process')
     save_process = read_config_boolean(ini_filename, 'RunningOptions', 'save_place_room_process')
     # todo 20240814 room_number 가 언제 할당되나 조사
@@ -56,7 +58,7 @@ def create_floorplan(initialized_grid,initial_cells, k):
     GridDrawer.color_cells_by_value(initialized_grid, full_path, display=display_process, save=save_process,
                                     num_rooms=k)
 
-    initialized_grid, initial_cells = relocate_by_orientation(initialized_grid, initial_cells, orientation_requirements)
+
     full_path = trivial_utils.create_filename(path, 'Init1', '', '', 'png')
     print(f'adjacency considered={initialized_grid}')
     GridDrawer.color_cells_by_value(initialized_grid, full_path, display = display_process, save=save_process, num_rooms=k)

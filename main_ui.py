@@ -111,7 +111,6 @@ class MainApp:
         config.read(file_name)
         return config.getint(section, option)
 
-
 if __name__ == "__main__":
     root = tk.Tk()
     app = MainApp(root)

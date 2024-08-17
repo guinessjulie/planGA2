@@ -151,9 +151,9 @@ def update_cascading(floorplan,cell,neighbors, cascading_cells_list, cascading_c
                 cascading_cells_list.remove(neighbor)
                 cascading_cells[neighbor] = 0
 
-
-def exchange_protruding_cells(floorplan, iteration=1, display=False, save=True):
-
+# todo separate floorplan and resulting_floorplan
+def exchange_protruding_cells(floorplan_origin, iteration=1, display=False, save=True):
+    floorplan = floorplan_origin.copy()
     cascading_cells = create_cascading_cells(floorplan)
     changed_cell_history={}
     if not np.any(cascading_cells == 1):
@@ -218,7 +218,7 @@ def exchange_protruding_cells(floorplan, iteration=1, display=False, save=True):
 
         GridDrawer.color_cells_by_value(floorplan, filename=full_path, text=text, display=display, save=save, num_rooms = num_rooms)
         # grid_to_screen_image(floorplan, no=i, format='png', prefix = filename , text = text)
-
+    return floorplan
 
 def create_cascading_cells(floorplan):
     cascading_cells = np.zeros_like(floorplan, dtype=bool)

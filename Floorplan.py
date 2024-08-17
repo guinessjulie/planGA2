@@ -2,6 +2,8 @@ import tkinter as tk
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from tkinter import filedialog, messagebox
+from fitness import Fitness
+
 import trivial_utils
 from main import GridDrawer, exchange_protruding_cells, categorize_boundary_cells, GraphBuilder, GraphDrawer, run_selected_module, build_polygon, exit_module
 from plan import create_floorplan, locate_initial_cell
@@ -11,6 +13,7 @@ from plan import create_floorplan, locate_initial_cell
 
 # todo 1. show simplify
 # todo 2. draw plan equal thickness show option
+
 class FloorplanApp:
     def __init__(self, root, init_grid, num_rooms, callback):
         self.root = root
@@ -23,19 +26,24 @@ class FloorplanApp:
         self.simlified_floorplan = None
         self.seed = None
         self.initial_cells = None
+        self.fit = None
         self.create_widgets()
         self.path = None
 
     def create_widgets(self):
-        # 왼쪽 프레임 생성 및 배치
+        # 왼쪽 프레임 생성 및 배치 (메뉴 버튼을 위한 프레임)
         left_frame = tk.Frame(self.root)
-        left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        left_frame.pack(side=tk.LEFT, fill=tk.Y)
 
-        # 오른쪽 프레임 생성 및 배치
-        right_frame = tk.Frame(self.root)
-        right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+        # 오른쪽 메인 프레임 생성 및 배치 (캔버스와 피트니스 프레임을 포함)
+        main_frame = tk.Frame(self.root)
+        main_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
 
-        # 오른쪽 프레임을 상하 두 개의 하위 프레임으로 나누기
+        # 오른쪽 메인 프레임의 상단에 두 개의 캔버스를 위한 프레임 배치
+        right_frame = tk.Frame(main_frame)
+        right_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+
+        # 오른쪽 프레임을 좌우 두 개의 하위 프레임으로 나누기
         left_right_frame = tk.Frame(right_frame)
         left_right_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
@@ -52,6 +60,7 @@ class FloorplanApp:
             ("Draw Floorplan", self.draw_floorplan),
             ("Simplify Floorplan", self.exchange_cells),
             ("Draw Plan Equal Thickness", self.draw_equal_thickness),
+            ("Fitness", self.calc_fitness),
             ("Return Floorplan", self.return_floorplan),
             ("Exit", self.root.quit),
         ]
@@ -60,16 +69,21 @@ class FloorplanApp:
         for text, command in buttons:
             tk.Button(left_frame, text=text, command=command, width=button_width).pack(pady=5, padx=5, fill=tk.X)
 
-        # 상단 캔버스 생성 및 배치 (초기 셀 배치용)
-        self.initial_canvas = tk.Canvas(left_right_frame, width=800, height=300)
+        # 왼쪽 캔버스 생성 및 배치 (초기 셀 배치용)
+        self.initial_canvas = tk.Canvas(left_right_frame, width=400, height=600)
         self.initial_canvas.pack(fill=tk.BOTH, expand=True)
 
-        # 하단 캔버스 생성 및 배치 (결과 Floorplan 디스플레이용)
-        self.final_canvas = tk.Canvas(right_right_frame, width=800, height=300)
+        # 오른쪽 캔버스 생성 및 배치 (결과 Floorplan 디스플레이용)
+        self.final_canvas = tk.Canvas(right_right_frame, width=400, height=600)
         self.final_canvas.pack(fill=tk.BOTH, expand=True)
 
+        # 피트니스 결과를 위한 프레임 (오른쪽 프레임 아래쪽에 배치)
+        bottom_frame = tk.Frame(main_frame)
+        bottom_frame.pack(side=tk.BOTTOM, fill=tk.X)
 
-
+        # 피트니스 결과를 위한 레이블
+        self.fitness_label = tk.Label(bottom_frame, text="Fitness Results", font=("Arial", 14))
+        self.fitness_label.pack(pady=10)
 
 
     def show_plot_on_canvas(self, fig, target_canvas):
@@ -134,10 +148,34 @@ class FloorplanApp:
 
     def exchange_cells(self):
         if self.floorplan is not None:
-            exchange_protruding_cells(self.floorplan, 10)
-            self.draw_floorplan(self.floorplan, self.final_canvas)
+            self.simplified_floorplan = exchange_protruding_cells(self.floorplan, 10)
+            self.draw_floorplan(self.simplified_floorplan, self.final_canvas)
         else:
             messagebox.showwarning("Warning", "Load floorplan first")
+
+    def calc_fitness(self):
+        if self.floorplan is not None:
+            self.fit = Fitness(self.floorplan)
+    # TODO 위에서처럼 Fitness 클래스에서 여러가지 값을 계산해서 가져올 수 있도록 바꾸자
+    def calc_fitness(self):
+        # 피트니스 값 계산 로직 (예시)
+        if self.floorplan is not None:
+            self.fit = Fitness(self.floorplan)
+        complexity = self.fit.complexity
+        print(f'complexity={complexity}')
+        fitness_values = {
+            "Shape": complexity,
+            "Area Efficiency": 0.85,
+            "Adjacency Satisfaction": 0.90,
+            "Circulation Efficiency": 0.75,
+            "Total Fitness": 0.83
+        }
+
+        # 결과를 문자열로 포맷팅
+        fitness_result = "\n".join([f"{key}: {value:.2f}" for key, value in fitness_values.items()])
+
+        # 레이블에 피트니스 결과 표시
+        self.fitness_label.config(text=f"Fitness Results:\n{fitness_result}")
 
     def categorize_cells(self):
         if self.floorplan is not None:
@@ -183,6 +221,7 @@ class FloorplanApp:
             messagebox.showinfo("Info", "Polygon built")
         else:
             messagebox.showwarning("Warning", "Load floorplan first")
+
 
     def create_widgets_save(self):
         left_frame = tk.Frame(self.root)
