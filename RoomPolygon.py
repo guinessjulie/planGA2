@@ -1,12 +1,45 @@
 import math
-from shapely.geometry import  LineString, Point, Polygon, MultiPoint, MultiLineString
+from shapely.geometry import LineString, Point, Polygon, MultiPoint, MultiLineString
+
+# todo room_poloygon에서 구한 area/perimeter와 Floorplan에서 구한 것이  값이 완전 다르다.
+
+class BoundingBox:
+    def __init__(self, corners):
+        self.min_x = min(point[0] for point in corners)
+        self.max_x = max(point[0] for point in corners)
+        self.min_y = min(point[1] for point in corners)
+        self.max_y = max(point[1] for point in corners)
+
+    @property
+    def width(self):
+        return self.max_x - self.min_x
+
+    @property
+    def height(self):
+        return self.max_y - self.min_y
+
+    @property
+    def area(self):
+        return self.width * self.height
+
+    @property
+    def as_ratio(self):
+        return self.width / self.height if self.height >= self.width else self.height / self.width
 
 
 class RoomPolygon:
-    def __init__(self, corners):
-        self._corners = None
-        self.corners = corners
+    def __init__(self, corners, room_id = None): # todo store room_id to debug
+        self._corners = corners
+        self.room_id = room_id
+        self.bb = BoundingBox(corners)
         self.moved_corners = []  # 이동된 코너들을 추적합니다.
+        self.polygon = Polygon(corners)  # 초기화시 다각형 설정
+        self.area = self.calculate_area()  # todo only to compare with polylgon's area and perimeters
+        self.perimeter = self.calculate_perimeter()  # todo only to compare with polylgon's area and perimeters
+        self.min_length, max_length = self.calculate_min_max_length()
+        self.complexity = self.calc_complexity()
+        self.rectangularity =  self.calc_rectangularity()
+        self.regularity = self.calc_regularity()
 
     @property
     def corners(self):
@@ -14,12 +47,30 @@ class RoomPolygon:
 
     @corners.setter
     def corners(self, new_corners):
-        self._corners=new_corners
+        self._corners = new_corners
+        self.bb = BoundingBox(new_corners)
         self.polygon = Polygon(new_corners)
         self.area = self.calculate_area()
         self.perimeter = self.calculate_perimeter()
-        self.min_length = self.calculate_min_length()
-        self.simplicity = self.calculate_simplicity()
+        self.min_length, max_length = self.calculate_min_max_length()
+        self.complexity = self.calc_complexity()
+        self.rectangularity =  self.calc_rectangularity()
+        self.regularity = self.calc_regularity()
+
+    # underway convert to BoundingBox class
+
+    def calc_complexity(self): # todo _corners 값이 바뀌어도 실행이 되는지 확인
+        vertex_count = len(self._corners)
+        if vertex_count < 4:
+            return 1.0
+        return 4 / vertex_count
+
+    def calc_rectangularity(self): # todo _corners 값이 바뀌어도 실행이 되는지 확인
+        return self.area / self.bb.area if self.bb.area != 0 else float('inf')
+
+    # todo _corners 값이 바뀌어도 실행이 되는지 확인
+    def calc_regularity(self):
+        return self.rectangularity * self.bb.as_ratio
 
     def calculate_metrics(self):
         self.area = self.calculate_area()
@@ -46,8 +97,6 @@ class RoomPolygon:
         max_y = max(y_coords)
 
         return min_x, max_x, min_y, max_y
-
-
 
     def move_edge(self, edge_index, distance):
         new_corners = self.corners.copy()
@@ -107,7 +156,6 @@ class RoomPolygon:
                             intersections.extend([(point[0], point[1]) for point in geom.coords])
         return intersections
 
-
     def insert_point_in_order(self, polygon, point):
         min_distance = float('inf')
         insert_index = -1
@@ -132,13 +180,15 @@ class RoomPolygon:
 
     def update_shared_edges(self, other_polygon, shared_corners):
         original_corners = [tup[0] for tup in self.moved_corners]
-        shared_updated = set(shared_corners).intersection(set(original_corners)) # shared corner 중 updated된 코너의 이동 전의 좌표 = 작업 대상
-        dict_moved_corners = {tup[0]:tup[1] for tup in self.moved_corners}
-        for updating_corner_index, original_corner in enumerate(shared_updated): # updating_corner_index = 작업할 대상을 차례로 방문할 때의 index
+        shared_updated = set(shared_corners).intersection(
+            set(original_corners))  # shared corner 중 updated된 코너의 이동 전의 좌표 = 작업 대상
+        dict_moved_corners = {tup[0]: tup[1] for tup in self.moved_corners}
+        for updating_corner_index, original_corner in enumerate(
+                shared_updated):  # updating_corner_index = 작업할 대상을 차례로 방문할 때의 index
             if original_corner in other_polygon.corners:
-                idx_other = other_polygon.corners.index(original_corner) # idx_other 번째 코너의 index
+                idx_other = other_polygon.corners.index(original_corner)  # idx_other 번째 코너의 index
                 new_corner = dict_moved_corners[original_corner]
-                other_polygon.move_corner(idx_other, new_corner )
+                other_polygon.move_corner(idx_other, new_corner)
 
         self.sync_all_adjacent_corners()
         other_polygon.sync_all_adjacent_corners()
@@ -146,7 +196,7 @@ class RoomPolygon:
 
         # 교차점 추가
         moved_edge = [corner for _, corner in self.moved_corners]
-        intersections = self.get_intersections(moved_edge, other_polygon) # <--- 여기서 에러
+        intersections = self.get_intersections(moved_edge, other_polygon)  # <--- 여기서 에러
         for intersection in intersections:
             if intersection not in self.corners:
                 self.insert_point_in_order(self, intersection)
@@ -227,10 +277,10 @@ class RoomPolygon:
 
         return False  # At least one corner was not aligned
 
-
     def get_shared_corners(self, other_polygon):
         shared_corners = set(self.corners).intersection(other_polygon.corners)
         return list(shared_corners)
+
     def calculate_area(self):
         x, y = zip(*self.corners)
         return 0.5 * abs(sum(x[i] * y[i - 1] - y[i] * x[i - 1] for i in range(len(self.corners))))
@@ -252,13 +302,23 @@ class RoomPolygon:
             min_length = min(min_length, length)
         return min_length
 
+    def calculate_min_max_length(self):
+        min_length = float('inf')
+        max_length = float(0)
+        for i in range(len(self.corners)):
+            x1, y1 = self.corners[i]
+            x2, y2 = self.corners[(i + 1) % len(self.corners)]
+            length = math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+            min_length = min(min_length, length)
+            max_length = max(max_length, length)
+        return min_length, max_length
+
     def calculate_simplicity(self):
         return (16 * self.area) / (self.perimeter ** 2.0)
 
     def get_reference_point(self):
         x, y = zip(*self.corners)
         return (sum(x) / len(self.corners), sum(y) / len(self.corners))
-
 
     def get_distances_to_boundary(self, reference_point, polygon):
         poly = Polygon(polygon)

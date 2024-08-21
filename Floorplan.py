@@ -1,34 +1,49 @@
 import tkinter as tk
 import matplotlib.pyplot as plt
+import numpy as np
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from tkinter import filedialog, messagebox
 from fitness import Fitness
 
 import trivial_utils
-from main import GridDrawer, exchange_protruding_cells, categorize_boundary_cells, GraphBuilder, GraphDrawer, run_selected_module, build_polygon, exit_module
+from main import GridDrawer, exchange_protruding_cells, categorize_boundary_cells, GraphBuilder, GraphDrawer, run_selected_module,  exit_module
+from simplify import exchange_protruding_cells, count_cascading_cells
 from plan import create_floorplan, locate_initial_cell
-
+from GridPolygon import GridPolygon
+from options import Options
+from PolygonExporter import PolygonExporter
+from config_reader import load_config
+import configparser
 # Press Ctrl+F5 to execute it or replace it with your code.
 # Press Double Shift to search everywhere for classes, files, tool windows, actions, and settings.
 
-# todo 1. show simplify
-# todo 2. draw plan equal thickness show option
+# todo create population class
+# todo use seed to recreate floorplan
+# todo let equal thickness function work
 
 class FloorplanApp:
+    # todo 0818 1. 동일 seed에서 만들어진 floorplan을 10개 이상 가지고 있어보자.
+    # todo 1-1 : create_floorplan과 simplify를 합치자.
     def __init__(self, root, init_grid, num_rooms, callback):
         self.root = root
         self.root.title("Floorplan UI")
+        self.room_polygons = None
 
         self.init_grid = init_grid
         self.num_rooms = num_rooms
+        self.options = Options()# todo 만들어놓기만 하고 사용 안했음
         self.callback = callback  # Main App으로 floorplan을 반환하기 위한 콜백 함수
         self.floorplan = None
-        self.simlified_floorplan = None
+        self.floorplans = []
+        self.simplified_candidates = []
+        self.simplified_floorplan = None
         self.seed = None
         self.initial_cells = None
         self.fit = None
-        self.create_widgets()
         self.path = None
+        self.option = None
+        self.create_widgets()
+
 
     def create_widgets(self):
         # 왼쪽 프레임 생성 및 배치 (메뉴 버튼을 위한 프레임)
@@ -57,10 +72,12 @@ class FloorplanApp:
         buttons = [
             ("Initial Room Location", self.initialize_room_location),
             ('Create Floorplan', self.initialize_floorplan),
-            ("Draw Floorplan", self.draw_floorplan),
             ("Simplify Floorplan", self.exchange_cells),
-            ("Draw Plan Equal Thickness", self.draw_equal_thickness),
-            ("Fitness", self.calc_fitness),
+            ("Choose Most Simplified", self.choose_simplified),
+            ("Build Polygon", self.build_polygon),
+            ("Draw Floorplan", self.draw_floorplan_menu),
+            ("Fitness", self.get_fitness),
+            ("Draw Plan Equal Thickness", self.draw_floorplan_menu),
             ("Return Floorplan", self.return_floorplan),
             ("Exit", self.root.quit),
         ]
@@ -110,7 +127,7 @@ class FloorplanApp:
 
     def initialize_floorplan(self):
         if self.seed is not None:
-            self.floorplan, self.initial_cells  = create_floorplan(self.seed, self.initial_cells, self.num_rooms)
+            self.floorplan, self.initial_cells  = create_floorplan(self.seed, self.initial_cells, self.num_rooms, self.options) # todo to change plan.create_floorplan
             if self.floorplan is not None:
                 self.draw_floorplan(self.floorplan, self.final_canvas)
             else:
@@ -122,8 +139,20 @@ class FloorplanApp:
         self.path = trivial_utils.create_folder_by_datetime()  # todo test
         self.full_path = trivial_utils.create_filename(self.path, 'Plan', '', '', 'png')
 
+    def draw_floorplan_menu(self):
+        self.create_path()
+        if self.simplified_floorplan is not None:
+            fig = GridDrawer.color_cells_by_value(self.simplified_floorplan, self.full_path, display=True, save=False, num_rooms=self.num_rooms)
+            self.show_plot_on_canvas(fig,self.initial_canvas)
+        elif self.floorplan is not None:
+            fig = GridDrawer.color_cells_by_value(self.floorplan, self.full_path, display=True, save=False, num_rooms=self.num_rooms)
+            self.show_plot_on_canvas(fig,self.initial_canvas)
+        else: messagebox.showwarning('Error', 'Create Floorplan First')
+
+
     # todo place canvas parameter to all calling function
     def draw_floorplan(self, floorplan, canvas ):
+
         self.create_path()
         if floorplan is not None:
             fig = GridDrawer.color_cells_by_value(floorplan, self.full_path, display=False, save=True, num_rooms = self.num_rooms)
@@ -131,13 +160,26 @@ class FloorplanApp:
         else:
             messagebox.showwarning("Warning", "Create Floorplan First")
 
-    def draw_equal_thickness(self, floorplan):
-        if floorplan is not None:
-            full_path = trivial_utils.create_filename(self.path, 'Floorplan', '', '', 'png')
-            fig = GridDrawer.draw_plan_equal_thickness(floorplan, full_path, display=False, save=True, num_rooms=self.num_rooms)
-            self.show_plot_on_canvas(fig, self.final_canvas)
+    def draw_equal_thicknes(self):
+
+        if self.path is None:
+            self.create_path()
+
+        if self.simplified_floorplan is not None:
+            floorplan = self.simplified_floorplan
+        elif self.floorplan is not None:
+            floorplan = self.floorplan
         else:
             messagebox.showwarning("Warning", "Load floorplan first")
+            return
+
+        self.draw_plan(floorplan, self.final_canvas)
+
+    def draw_plan(self, floorplan, canvas):
+
+        full_path = trivial_utils.create_filename(self.path, 'Floorplan', '', '', 'png')
+        fig = GridDrawer.draw_plan_equal_thickness(floorplan, full_path, display=False, save=False, num_rooms=self.num_rooms)
+        self.show_plot_on_canvas(fig, self.final_canvas)
 
     def draw_padded(self):
         if self.floorplan:
@@ -149,24 +191,41 @@ class FloorplanApp:
     def exchange_cells(self):
         if self.floorplan is not None:
             self.simplified_floorplan = exchange_protruding_cells(self.floorplan, 10)
+            self.simplified_candidates.append(self.simplified_floorplan)
             self.draw_floorplan(self.simplified_floorplan, self.final_canvas)
         else:
             messagebox.showwarning("Warning", "Load floorplan first")
 
-    def calc_fitness(self):
-        if self.floorplan is not None:
-            self.fit = Fitness(self.floorplan)
-    # TODO 위에서처럼 Fitness 클래스에서 여러가지 값을 계산해서 가져올 수 있도록 바꾸자
-    def calc_fitness(self):
+    def choose_simplified(self):
+        min_cas_len = np.sum(self.floorplan >= 1) # max_cascading_cell_length
+        min_cas_list = []
+        min_idx = 0
+        for idx, fl in enumerate(self.simplified_candidates):
+            cas_length, cas_list = count_cascading_cells(fl) # todo cascading_cell의 갯수가 가장 적은 floorplan을 구하자. 이 부분은 exchange_proturding_cells를 여러번 한 후 가장 optimum한 것을 고를 때 필요함
+            if cas_length < min_cas_len:
+                min_cas_len = cas_length
+                min_idx = idx
+                max_cas_list = cas_list
+        self.floorplan = self.simplified_candidates[min_idx] # todo look at max_cas_len, max_cas_list
+
+    # todo 현재는 일일히 단추를 눌러서 하나씩 하지만 모든 걸 한꺼번에 할 수 있어야 한다.
+    def get_fitness(self):
         # 피트니스 값 계산 로직 (예시)
-        if self.floorplan is not None:
-            self.fit = Fitness(self.floorplan)
-        complexity = self.fit.complexity
-        print(f'complexity={complexity}')
+        if self.floorplan is None:
+            messagebox('Warning', 'Floorplan not created')
+            return
+        if self.room_polygons is None:
+            messagebox.showwarning('Warning', 'Build Polygon First')
+            return
+
+        self.fit = Fitness(self.floorplan, self.num_rooms, self.room_polygons) # todo to change Fitness
         fitness_values = {
-            "Shape": complexity,
-            "Area Efficiency": 0.85,
-            "Adjacency Satisfaction": 0.90,
+
+            "Rectangularity": self.fit.rectangularity, # todo property 이기 때문에 method를 반납함. 따라서 Fitness에서 rectangularity를 직접 가지고 있어야 함
+            "Room Shape Complexity": self.fit.complexity,
+            "Room Regularity": self.fit.regularity,
+            "Size Satisfaction": self.fit.size_satisfaction,
+            "Adjacency Satisfaction": self.fit.adj_satisfaction,
             "Circulation Efficiency": 0.75,
             "Total Fitness": 0.83
         }
@@ -176,6 +235,20 @@ class FloorplanApp:
 
         # 레이블에 피트니스 결과 표시
         self.fitness_label.config(text=f"Fitness Results:\n{fitness_result}")
+
+    def build_polygon(self):
+        if self.floorplan is not None:
+            grid_polygon = GridPolygon(self.floorplan) #todo get scale from constraints.ini
+            self.room_polygons = grid_polygon.room_polygons
+            polygon_exporter = PolygonExporter(grid_polygon.cell_size, grid_polygon.padded_grid.shape, padding_size=1000)
+
+            suffix = 'before'
+            # todo fitness class를 콜할 때 이 room_polygon을 넘겨주자.
+            # Fitness call하기 전에 room_pollygon이 있어야 한다.
+            fig  = polygon_exporter.save_polygon_to_png(self.room_polygons, f"room_polygons_{suffix}.png")
+            self.show_plot_on_canvas(fig, self.final_canvas)
+        else:
+            messagebox.showwarning("Warning", "Load floorplan first")
 
     def categorize_cells(self):
         if self.floorplan is not None:
@@ -211,17 +284,6 @@ class FloorplanApp:
         else:
             messagebox.showwarning("Warning", "Build graph and create path first")
 
-    def build_polygon(self):
-        if self.floorplan:
-            polygon_module = {
-                "1": build_polygon,
-                "9": exit_module
-            }
-            run_selected_module(polygon_module, self.floorplan)
-            messagebox.showinfo("Info", "Polygon built")
-        else:
-            messagebox.showwarning("Warning", "Load floorplan first")
-
 
     def create_widgets_save(self):
         left_frame = tk.Frame(self.root)
@@ -235,6 +297,7 @@ class FloorplanApp:
             ("Create Initial Floorplan", self.initialize_floorplan),
             ("Draw Floorplan", self.draw_floorplan),
             ("Simplify Floorplan", self.exchange_cells),
+            ("Build Polygon", self.build_polygon),
             ("Draw Plan Equal Thickness", self.draw_equal_thickness),
             ("Return Floorplan", self.return_floorplan),
             ("Exit", self.root.quit),

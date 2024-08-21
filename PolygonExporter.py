@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import random
 import math
+import numpy as np
 from matplotlib import cm
 import RoomPolygon
 from typing import List, Tuple, Union
@@ -55,14 +56,26 @@ class PolygonExporter:
         doc.saveas(filename)
 
     def save_polygon_to_png(self, polygons, filename):
+        # Figure 및 Axes 생성
         fig, ax = plt.subplots()
         ax.set_aspect('equal')
-
+        colors = np.array([(1, 1, 1),  # 0 : 흰색 # (1, 1, 1),  # -1: 검정
+                           (1, 0, 0),  # 1. 빨간색
+                           (0, 1, 0),  # 2. 초록색
+                           (0, 0, 1),  # 3. 파란색
+                           (1, 1, 0),  # 4. 노란색
+                           (0, 1, 1),  # 5. cyon
+                           (1, 0, 1),  # 6. magenta
+                           (0.5, 0, 0.5),  # 7. purple
+                           (1, 0.5, 0),  # 8.orange
+                           (0.5, 1, 0),  # 9. lime
+                           (1, 0.75, 0.8)  # pink
+                           ])
         # 폴리건 그리기
         for room_number, room_polygon in polygons.items():
             polygon = self.apply_padding(room_polygon.corners)
-            color = (random.random(), random.random(), random.random())  # 무작위 색상 선택
-            poly = patches.Polygon(polygon, closed=True, edgecolor='black', facecolor=color, alpha=0.5)
+            color = colors[room_number]
+            poly = patches.Polygon(polygon, closed=True, edgecolor='black', facecolor=color)
             ax.add_patch(poly)
 
             # 폴리건의 중심 좌표 계산
@@ -80,7 +93,10 @@ class PolygonExporter:
 
         plt.axis('off')  # 축 숨기기
         plt.savefig(filename, bbox_inches='tight', pad_inches=0)
-        plt.close()
+        figure = fig
+        plt.close(fig)
+
+        return figure
 
 
     def determine_boundary_location(self,room, rotation, x1, y1) -> str:

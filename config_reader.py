@@ -1,6 +1,6 @@
 
 import configparser
-
+import ast
 
 def load_config(filename):
     config = configparser.ConfigParser()
@@ -50,3 +50,11 @@ def get_room_names():
         for room_number, room_name in config.items('RoomNames'):
             room_names[int(room_number)] = room_name
         return room_names
+
+def check_adjacent_requirement():
+    ini_filename = 'constraints.ini'
+    section = 'AdjacencyRequirements'
+    edges_str = read_str_constraints(ini_filename,section )
+
+    adjacency_list = ast.literal_eval(edges_str['adjacent'])  # TO LIST
+    return adjacency_list

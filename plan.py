@@ -9,10 +9,10 @@ import plan_utils
 from GridDrawer import GridDrawer
 import itertools
 from measure import categorize_boundary_cells
-from config_reader import read_constraint, read_config_boolean, read_str_constraints
+from config_reader import read_constraint, read_config_boolean, check_adjacent_requirement
 from cells_utils import  is_valid_cell, is_inside
 from plan_utils import dict_value_to_coordinates
-import ast
+from options import Options
 
 # todo 1: 사이즈 작은 사이즈일 수록 빈 인접셀 적다. 이를 이용해서 초기화에 활용
 # todo 2: 인접 리스트를 만들어서 해당 조건 만족하도록
@@ -21,12 +21,6 @@ import ast
 # todo 5: 인접조건 neighbor 갯수가 가장 많은 것을 living room으로? 그래프 구조 활용
 # todo 6: Graph의 구조가 같은지를 체크할 수 있도록 GraphGrid에 equality function들을 만들었다. 이를 활용해서 인접성 리스트를 optimize 하자
 
-def check_adjacent_requirement(ini_filename):
-    section = 'AdjacencyRequirements'
-    edges_str = read_str_constraints(ini_filename,section )
-
-    adjacency_list = ast.literal_eval(edges_str['adjacent'])  # TO LIST
-    return adjacency_list
 
 
 def create_req_graph(adjacency_list):
@@ -38,33 +32,31 @@ def create_req_graph(adjacency_list):
 
 def locate_initial_cell(empty_grid, k):
     ini_filename = 'constraints.ini'
-    adjacency_list = check_adjacent_requirement(ini_filename)
+    adjacency_list = check_adjacent_requirement()
     orientation_requirements = read_constraint(ini_filename, 'OrientationRequirements')
     initialized_grid, initial_cells = place_seed(to_np_array(empty_grid), k, adjacency_list )
     initialized_grid, initial_cells = relocate_by_orientation(initialized_grid, initial_cells, orientation_requirements)
     return initialized_grid, initial_cells
 
-def create_floorplan(initialized_grid,initial_cells, k):
-    ini_filename = 'constraints.ini'
-
-
-
-    display_process = read_config_boolean(ini_filename, 'RunningOptions', 'display_place_room_process')
-    save_process = read_config_boolean(ini_filename, 'RunningOptions', 'save_place_room_process')
+def display_process(initialized_grid, initial_cells, k,options):
     # todo 20240814 room_number 가 언제 할당되나 조사
     # initialized_grid, initial_cells = place_k_rooms_on_grid(to_np_array(empty_grid), k) # todo place_seed에서 그래프 만족시키는 seed 새로 만듦
     path = trivial_utils.create_folder_by_datetime()
     full_path = trivial_utils.create_filename(path, 'Init0', '', '', 'png')
-    GridDrawer.color_cells_by_value(initialized_grid, full_path, display=display_process, save=save_process,
+    GridDrawer.color_cells_by_value(initialized_grid, full_path, display=options.display, save=options.save,
                                     num_rooms=k)
 
 
     full_path = trivial_utils.create_filename(path, 'Init1', '', '', 'png')
-    print(f'adjacency considered={initialized_grid}')
-    GridDrawer.color_cells_by_value(initialized_grid, full_path, display = display_process, save=save_process, num_rooms=k)
-    print(f'relocated:{initial_cells}\n{initialized_grid}')
+    # print(f'adjacency considered={initialized_grid}')
+    GridDrawer.color_cells_by_value(initialized_grid, full_path, display=options.display, save=options.save, num_rooms=k)
+    # print(f'relocated:{initial_cells}\n{initialized_grid}')
 
-    floorplan = allocate_rooms(initialized_grid, initial_cells, display = display_process, save=save_process, num_rooms=k)
+
+def create_floorplan(initialized_grid,initial_cells, k, options):
+
+    display_process(initialized_grid, initial_cells, k, options)
+    floorplan = allocate_rooms(initialized_grid, initial_cells, display =  options.display, save=options.save, num_rooms=k)
     return floorplan, initial_cells
 
 
@@ -194,10 +186,9 @@ def allocate_rooms(floorplan, obtainable_cells, display=False, save=True, num_ro
         filename, current_step = trivial_utils.create_filename_in_order('png', 'Step', current_step)
         GridDrawer.color_cells_by_value(floorplan, filename, display=display, save=save, num_rooms=num_rooms)
 
-    floorplan = exchange_extreme_cells(floorplan)
+    # floorplan = exchange_extreme_cells(floorplan)
     filename, current_step = trivial_utils.create_filename_in_order('png', 'Reform', current_step)
     GridDrawer.color_cells_by_value(floorplan, filename, display=display, save=save, num_rooms=num_rooms)
-
     return floorplan
 
 # 색칠하지 말고 방향과 행렬 번호만 리턴하자.
@@ -488,7 +479,7 @@ def count_different_and_same_neighbors(floorplan, cell):
 
     return different_count, same_count
 
-
+# todo 이 짓은 의미기 없음 지우기는 하는데 나중에 무슨 쓸 일이 있는지 보자. 실제로 교환하는 게 같은 룸을 교환하는건데 이게 말이 되냐고
 def exchange_extreme_cells(floorplan):
     cell_dict = rooms_cells(floorplan)
 

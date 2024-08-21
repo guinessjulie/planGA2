@@ -41,7 +41,11 @@ class GridPolygon:
         room_polygons = {}
 
         for room_number in room_numbers:
-            room_polygons[room_number] = RoomPolygon(self.get_polygon_corners(room_number))
+            # underway: RoomPolyg에 onroom_id 추가
+            # underway: examin RoomPolygon 좌표와 area
+            corners = self.get_polygon_corners(room_number)
+            room_polygons[room_number] = RoomPolygon(corners, room_number)
+            # room_polygons[room_number] = RoomPolygon(self.get_polygon_corners(room_number)) #info splited to two line above # todo to see how to get polygon corners
 
         return room_polygons
 

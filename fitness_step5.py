@@ -11,7 +11,7 @@ class Fitness:
         self._width, self._height = width, height,
         self.config_options = lambda ky: config.config_options(ky)
         self._grid= element
-        self.adjacency_graph = element.buildUndirectedGraph()
+        self.adjacency_graph = element.cell_adjacent_graph_for_rooms()
         self._attrs, self._fits, self.edges = self.build_attrs(element, numCell, id)
         self._id = id
         # Util.display_str_dict(self._fits, 'Fitness') #get rid of fitness values on the console

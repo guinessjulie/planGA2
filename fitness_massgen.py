@@ -12,7 +12,7 @@ class Fitness:
         self._width, self._height = width, height,
         self.config_options = lambda ky: config.config_options(ky)
         self._genes = genes
-        self.adjacency_graph = Util.buildUndirectedGraph(self._genes, width, height)
+        self.adjacency_graph = Util.cell_adjacent_graph_for_rooms(self._genes, width, height)
         self._attrs, self._fits, self.edges = self.build_attrs(numCell, id)
         self._id = id
         # Util.display_str_dict(self._fits, 'Fitness') #get rid of fitness values on the console
