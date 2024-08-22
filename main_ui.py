@@ -103,8 +103,9 @@ class MainApp:
         # Pass the PanedWindow to the SettingsApp
         settings_root = tk.Toplevel(root)
         settings_root.title('Settings')
-        config = read_ini_file('constraints.ini')
-        SettingsApp(settings_root, config)
+        config = read_ini_file('config.ini')
+        constraints = read_ini_file('constraints.ini')
+        SettingsApp(settings_root, config,constraints)
 
     def read_config_int(self, file_name, section, option):
         config = configparser.ConfigParser()

@@ -44,7 +44,7 @@ def write_ini_file(config, file_name):
         config.write(configfile)
 
 def get_room_names():
-    config = read_ini_file('constraints.ini')
+    config = read_ini_file('config.ini')
     room_names = {}
     if config.has_section('RoomNames'):
         for room_number, room_name in config.items('RoomNames'):
@@ -58,3 +58,11 @@ def check_adjacent_requirement():
 
     adjacency_list = ast.literal_eval(edges_str['adjacent'])  # TO LIST
     return adjacency_list
+
+
+def read_room_names():
+    config = read_ini_file('config.ini')
+    section = 'RoomNames'
+
+    # Room ID와 Room Name 매핑
+    return {int(key): value for key, value in config[section].items()}

@@ -4,7 +4,8 @@ import matplotlib as mpl
 from matplotlib.colors import ListedColormap, Normalize, BoundaryNorm
 import numpy as np
 import textwrap
-from constants import UNIT_SCALE
+from constants import UNIT_SCALE, COLORS
+
 from config_reader import read_config_int, get_room_names
 class GridDrawer:
 
@@ -97,11 +98,13 @@ class GridDrawer:
 
         # Get the unique room identifiers and their corresponding colors
         rooms = np.unique(padded_grid)
-        colors = {
-            0: 'white', 1: 'red', 2: 'green', 3: 'blue', 4: 'yellow',
-            5: 'cyan', 6: 'magenta', 7: 'purple', 8:'orange', 9:'lime', 10:'pink' ,
-            -1: 'white'
-        }
+
+#        colors = {
+#            0: 'white', 1: 'red', 2: 'green', 3: 'blue', 4: 'yellow',
+#            5: 'cyan', 6: 'magenta', 7: 'purple', 8: 'orange', 9: 'lime', 10: 'pink',
+#            -1: 'white'
+#        }
+        colors = COLORS
         # Plot each room with the corresponding color
         for room in rooms:
             if room != -1:  # Ignore external space
@@ -199,7 +202,7 @@ class GridDrawer:
             0: 'white', 1: 'red', 2: 'blue', 3: 'yellow',
             4: 'cyan', 5: 'green', -1: 'gray'
         }
-
+        colors = COLORS
         # Plot each room with the corresponding color
         for room in rooms:
             if room != -1:  # Ignore external space
@@ -286,7 +289,7 @@ class GridDrawer:
             5: 'cyan', 6: 'magenta', 7: 'purple', 8:'orange', 9:'lime', 10:'pink' ,
             -1: 'white'
         }
-
+        colors = COLORS
         # Plot each room with the corresponding color
         for room in rooms:
             if room != -1:  # Ignore external space
@@ -332,6 +335,85 @@ class GridDrawer:
                 x_mean = np.mean(room_coords[:, 1]) * scale + scale / 2
                 ax.text(x_mean, y_mean, f'Room {room}\n{area_sqm:.1f} m²', color='black', weight='bold',
                         ha='center', va='center', fontsize=12)
+
+        # Adjust plot limits to account for wall thickness
+        ax.set_xlim(-wall_thickness * 2, grid.shape[1] * scale + wall_thickness * 2)
+        ax.set_ylim(-wall_thickness * 2, grid.shape[0] * scale + wall_thickness * 2)
+
+        # Display the plot
+        plt.gca().invert_yaxis()
+        if display:
+            plt.show()
+        if save:
+            plt.savefig(path)
+
+        return fig
+
+    def draw_plan_with_metrics(grid,  path, display=False, save=True, num_rooms=7, metrics=None):
+        # get  the scale
+        scale = 1000  # 1 unit = 1000mm
+        wall_thickness = 5  # Wall thickness in mm
+        scale = read_config_int('constraints.ini','Metrics',  'scale')
+        wall_thickness = read_config_int('constraints.ini','Metrics','wall_thickness')
+
+        # Create a plot
+        fig, ax = plt.subplots()
+
+        # Get the unique room identifiers and their corresponding colors
+        rooms = np.unique(grid)
+        colors = COLORS
+        # Plot each room with the corresponding color
+        for room in rooms:
+            if room != -1:  # Ignore external space
+                room_coords = np.argwhere(grid == room)
+                for coord in room_coords:
+                    y, x = coord
+                    rect = plt.Rectangle((x * scale, y * scale), scale, scale, facecolor=colors[room], edgecolor='black', #todo 여기서 colors[8]을 확인하자
+                                         linewidth=0)
+                    ax.add_patch(rect)
+
+
+        # Add thick borders for each room
+        for y in range(grid.shape[0]):
+            for x in range(grid.shape[1]):
+                if grid[y, x] != -1:
+                    if y == 0 or grid[y - 1, x] != grid[y, x]:  # Top border
+                        ax.plot([x * scale, (x + 1) * scale], [y * scale, y * scale], color='black',
+                                linewidth=wall_thickness)
+                    if y == grid.shape[0] - 1 or grid[y + 1, x] != grid[y, x]:  # Bottom border
+                        ax.plot([x * scale, (x + 1) * scale], [(y + 1) * scale, (y + 1) * scale], color='black',
+                                linewidth=wall_thickness)
+                    if x == 0 or grid[y, x - 1] != grid[y, x]:  # Left border
+                        ax.plot([x * scale, x * scale], [y * scale, (y + 1) * scale], color='black',
+                                linewidth=wall_thickness)
+                    if x == grid.shape[1] - 1 or grid[y, x + 1] != grid[y, x]:  # Right border
+                        ax.plot([(x + 1) * scale, (x + 1) * scale], [y * scale, (y + 1) * scale], color='black',
+                                linewidth=wall_thickness)
+
+        # Set labels and grid
+        ax.set_xticks(np.arange(0, (grid.shape[1] + 1) * scale, scale))
+        ax.set_yticks(np.arange(0, (grid.shape[0] + 1) * scale, scale))
+        ax.set_xticklabels(np.arange(0, grid.shape[1] + 1))
+        ax.set_yticklabels(np.arange(0, grid.shape[0] + 1))
+        plt.xlabel('X (1000 mm units)')
+        plt.ylabel('Y (1000 mm units)')
+        ax.grid(False)  # Disable the grid
+
+        # Add room labels
+        # underway: label from metrics parameter comming from Floorplan's self.fit.attributes
+        # todo scale readjust
+        for room_id in rooms:
+            if room_id > 0:
+                room_coords = np.argwhere(grid == room_id)
+                y_mean = np.mean(room_coords[:, 0]) * scale + scale / 2
+                x_mean = np.mean(room_coords[:, 1]) * scale + scale / 2
+                # underway Room Labels
+                room_names = get_room_names()
+                metric_label =  'm²' # todo right now using square meters for area, implement for general purporse
+                area_mm2 = metrics[room_id]
+                area_sqm = area_mm2 / 1_000_000
+                ax.text(x_mean, y_mean, f'{room_names[room_id]}\n{area_sqm:.1f}{metric_label}', color='black', ha='center', va='center', fontsize=10)
+
 
         # Adjust plot limits to account for wall thickness
         ax.set_xlim(-wall_thickness * 2, grid.shape[1] * scale + wall_thickness * 2)
@@ -406,24 +488,43 @@ class GridDrawer:
             wrapped_texts = '\n'.join(wrapped_texts)
             aligned_text = short_text + '\n' + wrapped_texts
             return aligned_text
-
+# underway 색상의 채도를 높이고 색을 더 만든다.
         # 각 정수 값에 대응하는 RGB 색상 정의
-        colors = np.array([(1, 1, 1),  # -1: 검정
-                           (1, 1, 1),  # 0 : 흰색
-                           (1, 0, 0),  # 1. 빨간색
-                           (0, 1, 0),  # 2. 초록색
-                           (0, 0, 1),  # 3. 파란색
-                           (1, 1, 0),  # 4. 노란색
-                           (0, 1, 1),  # 5. cyon
-                           (1, 0, 1),  # 6. magenta
-                           (0.5,0, 0.5), # 7. purple
-                           (1, 0.5, 0), # 8.orange
-                           (0.5, 1, 0), # 9. lime
-                           (1, 0.75, 0.8) # pink
-                           ])
+#        colors = np.array([(1, 1, 1),  # -1: 검정
+#                           (1, 1, 1),  # 0 : 흰색
+#                           (1, 0, 0),  # 1. 빨간색
+#                           (0, 1, 0),  # 2. 초록색
+#                           (0, 0, 1),  # 3. 파란색
+#                           (1, 1, 0),  # 4. 노란색
+#                           (0, 1, 1),  # 5. cyon
+#                           (1, 0, 1),  # 6. magenta
+#                           (0.5,0, 0.5), # 7. purple
+#                           (1, 0.5, 0), # 8.orange
+#                           (0.5, 1, 0), # 9. lime
+#                           (1, 0.75, 0.8) # pink
+#                           ])
 
-        cmap = ListedColormap(colors[:num_rooms+2])
+        colors = np.array([(1, 1, 1),  # -1: 검정색 (배경 등으로 사용될 수 있음)
+                       (1, 1, 1),  # 0: 흰색
+                       (1, 0, 0),  # 1: 빨간색
+                       (0, 1, 0),  # 2: 초록색
+                       (0, 0, 1),  # 3: 파란색
+                       (1, 1, 0),  # 4: 노란색
+                       (0, 1, 1),  # 5: 시안 (cyan)
+                       (1, 0, 1),  # 6: 마젠타 (magenta)
+                       (0.75, 0.5, 0.9),  # 7: 밝은 보라색 (lavender)
+                       (1, 0.5, 0),  # 8: 주황색 (orange)
+                       (0.5, 1, 0),  # 9: 라임색 (lime)
+                       (1, 0.75, 0.8),  # 10: 핑크색 (pink)
+                       (0.5, 0.5, 1),  # 11: 라벤더 (lavender)
+                       (0.25, 0.75, 0.75),  # 12: 민트 (mint)
+                       (0.75, 0.75, 0.25),  # 13: 올리브색 (olive)
+                       (1, 0.5, 0.5),  # 14: 연한 빨간색 (light red)
+                       (0.5, 0.5, 0.5)])  # 15: 회색 (gray)
 
+        # cmap = ListedColormap(colors[:num_rooms+2]) # underway changing colors module in central control
+        colors = COLORS
+        cmap = ListedColormap([colors[i] for i in range(-1, num_rooms+2)])
         # 데이터 값의 범위에 따른 경계값 설정 (여기서는 -1에서 5까지)
         boundaries =  generate_boundaries(num_rooms)
         norm = BoundaryNorm(boundaries, cmap.N)
@@ -470,16 +571,36 @@ class GridDrawer:
             return aligned_text
 
         # 각 정수 값에 대응하는 RGB 색상 정의
-        colors = np.array([(0, 0, 0),  # -1: 검정
-                           (1, 1, 1),  # 0 : 흰색
-                           (1, 0, 0),  # 빨간색
-                           (0, 1, 0),  # 초록색
-                           (0, 0, 1),  # 파란색
-                           (1, 1, 0),  # 노란색
-                           (0, 1, 1),  # 청록색
-                           ])
+        # colors = np.array([(0, 0, 0),  # -1: 검정
+        #                    (1, 1, 1),  # 0 : 흰색
+        #                    (1, 0, 0),  # 빨간색
+        #                    (0, 1, 0),  # 초록색
+        #                    (0, 0, 1),  # 파란색
+        #                    (1, 1, 0),  # 노란색
+        #                    (0, 1, 1),  # 청록색
+        #                    ])
+        colors = np.array([(1, 1, 1),  # -1: 검정색 (배경 등으로 사용될 수 있음)
+                           (1, 1, 1),  # 0: 흰색
+                           (1, 0, 0),  # 1: 빨간색
+                           (0, 1, 0),  # 2: 초록색
+                           (0, 0, 1),  # 3: 파란색
+                           (1, 1, 0),  # 4: 노란색
+                           (0, 1, 1),  # 5: 시안 (cyan)
+                           (1, 0, 1),  # 6: 마젠타 (magenta)
+                           (0.75, 0.5, 0.9),  # 7: 밝은 보라색 (lavender)
+                           (1, 0.5, 0),  # 8: 주황색 (orange)
+                           (0.5, 1, 0),  # 9: 라임색 (lime)
+                           (1, 0.75, 0.8),  # 10: 핑크색 (pink)
+                           (0.5, 0.5, 1),  # 11: 라벤더 (lavender)
+                           (0.25, 0.75, 0.75),  # 12: 민트 (mint)
+                           (0.75, 0.75, 0.25),  # 13: 올리브색 (olive)
+                           (1, 0.5, 0.5),  # 14: 연한 빨간색 (light red)
+                           (0.5, 0.5, 0.5)])  # 15: 회색 (gray)
+        colors = COLORS
 
-        cmap = ListedColormap(colors)
+        # cmap = ListedColormap(colors) # underway to change colors for center control
+        # ListedColormap을 생성할 때, constants.COLORS 딕셔너리에서 색상을 가져옴
+        cmap = ListedColormap([colors[i] for i in range(-1, len(colors))])
 
         # 데이터 값의 범위에 따른 경계값 설정 (여기서는 -1에서 5까지)
         boundaries = [-1.5, -0.5, 0.5, 1.5, 2.5, 3.5, 4.5, 5.5]

@@ -19,11 +19,13 @@ import configparser
 
 # todo create population class
 # todo use seed to recreate floorplan
-# todo let equal thickness function work
+# todo let equal thickness function work customize
 
 class FloorplanApp:
     # todo 0818 1. 동일 seed에서 만들어진 floorplan을 10개 이상 가지고 있어보자.
+    # info: done: in self.simplified_candidates have diff floorplans from the same initiialized_floorplan. after choosing best simplified floorplans. assigns to self.floorplan to set final result
     # todo 1-1 : create_floorplan과 simplify를 합치자.
+    # todo: Area 및 wall thickness 표시
     def __init__(self, root, init_grid, num_rooms, callback):
         self.root = root
         self.root.title("Floorplan UI")
@@ -78,6 +80,7 @@ class FloorplanApp:
             ("Draw Floorplan", self.draw_floorplan_menu),
             ("Fitness", self.get_fitness),
             ("Draw Plan Equal Thickness", self.draw_floorplan_menu),
+            ("Draw Plan with Value", self.draw_plan_with_values),
             ("Return Floorplan", self.return_floorplan),
             ("Exit", self.root.quit),
         ]
@@ -126,6 +129,7 @@ class FloorplanApp:
             messagebox.showwarning('Error', 'init_grid is not given')
 
     def initialize_floorplan(self):
+        self.simplified_candidates.clear()
         if self.seed is not None:
             self.floorplan, self.initial_cells  = create_floorplan(self.seed, self.initial_cells, self.num_rooms, self.options) # todo to change plan.create_floorplan
             if self.floorplan is not None:
@@ -160,11 +164,11 @@ class FloorplanApp:
         else:
             messagebox.showwarning("Warning", "Create Floorplan First")
 
-    def draw_equal_thicknes(self):
+    def draw_plan_with_values(self):
 
         if self.path is None:
             self.create_path()
-
+        # todo: 이렇게 하면 꼬인다. simlified_floorplan을 표시하느냐 floorplan을 표시하느냐 이걸 결정해서 로직을 바꾸자.
         if self.simplified_floorplan is not None:
             floorplan = self.simplified_floorplan
         elif self.floorplan is not None:
@@ -178,7 +182,7 @@ class FloorplanApp:
     def draw_plan(self, floorplan, canvas):
 
         full_path = trivial_utils.create_filename(self.path, 'Floorplan', '', '', 'png')
-        fig = GridDrawer.draw_plan_equal_thickness(floorplan, full_path, display=False, save=False, num_rooms=self.num_rooms)
+        fig = GridDrawer.draw_plan_with_metrics(floorplan, full_path, display=False, save=False, num_rooms=self.num_rooms, metrics=self.fit.room_areas)
         self.show_plot_on_canvas(fig, self.final_canvas)
 
     def draw_padded(self):
@@ -187,7 +191,7 @@ class FloorplanApp:
             messagebox.showinfo("Info", "Plan drawn with padding")
         else:
             messagebox.showwarning("Warning", "Load floorplan first")
-
+    # underway rectangularity 확인
     def exchange_cells(self):
         if self.floorplan is not None:
             self.simplified_floorplan = exchange_protruding_cells(self.floorplan, 10)
@@ -206,7 +210,7 @@ class FloorplanApp:
                 min_cas_len = cas_length
                 min_idx = idx
                 max_cas_list = cas_list
-        self.floorplan = self.simplified_candidates[min_idx] # todo look at max_cas_len, max_cas_list
+        self.floorplan = self.simplified_candidates[min_idx]
 
     # todo 현재는 일일히 단추를 눌러서 하나씩 하지만 모든 걸 한꺼번에 할 수 있어야 한다.
     def get_fitness(self):
