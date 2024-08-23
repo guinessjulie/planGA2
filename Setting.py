@@ -50,7 +50,20 @@ class SettingsApp:
     def create_widgets(self):
         # 스타일 설정
         style = ttk.Style()
-        style.configure("TNotebook.Tab", padding=[20, 5])  # 탭 간격 설정
+        style.theme_use('clam')
+        style.configure("TNotebook.Tab", padding=[10, 5])
+        style.map("TNotebook.Tab", background=[("selected", "#FFCCCC")], foreground=[("selected", "#000000")])
+
+        # 일반 프레임의 배경색 설정
+        style.configure("TFrame", background="#E6E6E6")
+
+        # 라벨 스타일 변경
+        style.configure("TLabel", background="#E6E6E6", )
+
+        # 버튼 스타일 변경
+        style.configure("TButton", padding=[4,2], relief="raised", background="#CCCCFF")
+        style.map("TButton", background=[("active", "#FF99CC")], foreground=[("disabled", "#B0B0B0")])
+
 
         self.sections = {}
 
@@ -353,18 +366,18 @@ class SettingsApp:
 
     def add_existing_size_room_entry(self, room_number, size_range):
         room_number = int(room_number)
-        room_name = self.room_names.get(room_number, 'Unknown')
+        room_name = self.room_names.get(room_number, 'Select')
         min_size, max_size = size_range.split(',')
         self.add_size_room_entry(room_number, room_name, min_size, max_size)
 
-    def add_size_room_entry(self, room_number="", room_name="Unknown", min_size="", max_size=""):
+    def add_size_room_entry(self, room_number="", room_name="Select", min_size="", max_size=""):
         row_frame = ttk.Frame(self.size_entries_frame)
         row_frame.pack(fill="x", pady=5)
 
         room_name_var = tk.StringVar(value=room_name)
 
         # 방 번호를 read-only Label로 표시
-        room_number_label = ttk.Label(row_frame, text=str(room_number) if room_number else "Unknown", width=15)
+        room_number_label = ttk.Label(row_frame, text=str(room_number) if room_number else "-1", width=5)
         room_number_label.pack(side="left", padx=5)
 
         # 방 이름을 선택할 수 있는 Combobox
