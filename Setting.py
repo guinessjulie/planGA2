@@ -48,6 +48,10 @@ class SettingsApp:
         self.create_widgets()
 
     def create_widgets(self):
+        # 스타일 설정
+        style = ttk.Style()
+        style.configure("TNotebook.Tab", padding=[20, 5])  # 탭 간격 설정
+
         self.sections = {}
 
         self.add_room_names_section()
@@ -57,17 +61,15 @@ class SettingsApp:
         self.add_size_requirements_section()
         self.add_adjacency_requirements_section()
 
-        for section in self.constraints.sections():
-            if section in ["OrientationRequirements", "SizeRequirements", "AdjacencyRequirements"]:
+        for section in self.config.sections():
+            if section in ["RoomNames"]:
                 continue  # 특정 섹션들을 건너뜁니다.
 
             frame = ttk.Frame(self.notebook)
             self.notebook.add(frame, text=section)
 
             self.sections[section] = {}
-            # todo 나중에 정 할일 없으면 고치자 뭘? constraints.ini에 있는 내용을 config.ini로 가져와서 자동으로 보여주게 하는 건데
-            #  뭐 중요한 것도 아니고...일단은 RoomNames만 config.ini 파일에서 처리하고 나머지는 다 constraints에서 처리
-            for key, value in self.constraints.items(section):
+            for key, value in self.config.items(section):
                 display_key = key.replace("num_rooms", "number of rooms")  # UI에 표시할 레이블 변경
                 label = ttk.Label(frame, text=display_key)
                 label.pack(side="top", fill="x", padx=10, pady=5)
@@ -98,6 +100,7 @@ class SettingsApp:
         if self.config.has_section('RoomNames'):
             room_names = {int(key): value for key, value in self.config.items("RoomNames")}
         return room_names
+
     def add_room_names_section(self):
         # Room Names 섹션 생성
         section = "RoomNames"
@@ -116,7 +119,7 @@ class SettingsApp:
         header_frame = ttk.Frame(self.room_names_entries_frame)
         header_frame.pack(fill="x", pady=5)
 
-        ttk.Label(header_frame, text="Room Number", width=20).pack(side="left", padx=5)
+        ttk.Label(header_frame, text="ID", width=5).pack(side="left", padx=5)
         ttk.Label(header_frame, text="Room Name", width=20).pack(side="left", padx=5)
 
         # 기존 항목들을 가로로 배치
@@ -130,52 +133,82 @@ class SettingsApp:
     def add_existing_room_name_entry(self, room_number, room_name):
         self.add_room_name_entry(room_number, room_name)
 
-    def add_room_name_entry(self, room_number="", room_name=""):
+    # info 방 이름이 입력되었을 때 해당 값을 SettingApp에 제대로 전달하려면, Entry 위젯에서 발생하는 이벤트를 처리해야 함.
+    #  특히, 사용자가 Entry 위젯에 값을 입력한 후 그 값을 즉시 반영할 수 있도록 이벤트 핸들러 추가
+    def add_room_name_entry(self, room_number=None, room_name=""):
         row_frame = ttk.Frame(self.room_names_entries_frame)
         row_frame.pack(fill="x", pady=5)
 
-        room_number_entry = ttk.Entry(row_frame, width=20)
-        room_number_entry.insert(0, room_number)
-        room_number_entry.pack(side="left", padx=5)
-        self.room_number_entries.append(room_number_entry)
+        if room_number is None:
+            # 현재 사용 중인 방 번호를 추출
+            existing_numbers = sorted(int(label.cget("text")) for label in self.room_number_entries)
 
-        room_name_entry = ttk.Entry(row_frame, width=20)
-        room_name_entry.insert(0, room_name)
+            # 가장 작은 빈 번호를 찾음
+            room_number = 1
+            for number in existing_numbers:
+                if room_number < number:
+                    break
+                room_number += 1
+
+        # 방 번호를 Label로 표시
+        room_number_label = ttk.Label(row_frame, text=str(room_number), width=5)
+        room_number_label.pack(side="left", padx=5)
+        self.room_number_entries.append(room_number_label)
+
+        # 방 이름을 입력할 수 있는 Entry
+        # info StringVar 사용:
+        #  StringVar는 값이 변경될 때 이벤트를 트리거할 수 있음.
+        room_name_var = tk.StringVar(value=room_name)
+        room_name_entry = ttk.Entry(row_frame, textvariable=room_name_var, width=20)
         room_name_entry.pack(side="left", padx=5)
         self.room_name_entries.append(room_name_entry)
 
+        # 방 이름 변경 시 이벤트 처리 (이벤트 트리거가 아닌, 저장 시점에 값을 가져오도록 변경)
+        room_name_entry.bind("<FocusOut>", lambda event: self.update_room_name(room_number_label, room_name_var))
+
         # 제거 버튼 추가
         remove_button = ttk.Button(row_frame, text="Remove",
-                                   command=lambda: self.remove_room_name_entry(row_frame, room_number_entry,
+                                   command=lambda: self.remove_room_name_entry(row_frame, room_number_label,
                                                                                room_name_entry))
         remove_button.pack(side="left", padx=5)
 
         self.entry_frames.append(row_frame)
 
-    def remove_room_name_entry(self, row_frame, room_number_entry, room_name_entry):
+    def remove_room_name_entry(self, row_frame, room_number_label, room_name_entry):
         # 설정 파일에서 해당 항목 삭제
         section = "RoomNames"
-        room_number = room_number_entry.get()
+        room_number = room_number_label.cget("text")
         if room_number in self.config[section]:
             del self.config[section][room_number]
 
         # 행 프레임과 해당 입력 필드들 제거
         row_frame.pack_forget()
-        self.room_number_entries.remove(room_number_entry)
+        self.room_number_entries.remove(room_number_label)
         self.room_name_entries.remove(room_name_entry)
         self.entry_frames.remove(row_frame)
 
+        room_number_label.destroy()  # Label 제거
+        room_name_entry.destroy()  # Entry 제거
 
     def save_room_names(self):
         section = "RoomNames"
-        for i, (room_number_label, room_name_combobox) in enumerate(
-                zip(self.room_number_entries, self.room_name_entries)):
+        if not self.config.has_section(section):
+            self.config.add_section(section)
+
+        # 기존 섹션을 모두 비우고 새로 작성
+        self.config.remove_section(section)
+        self.config.add_section(section)
+
+        for room_number_label, room_name_entry in zip(self.room_number_entries, self.room_name_entries):
             room_number = room_number_label.cget("text")  # Label에서 방 번호를 가져옴
-            room_name = room_name_combobox.get()
+            room_name = room_name_entry.get().strip()  # 현재 입력된 방 이름을 가져옴
             if room_number and room_name:
-                self.config[section][room_number] = room_name
+                self.config.set(section, room_number, room_name)
+            else:
+                if room_number in self.config[section]:
+                    del self.config[section][room_number]
 
-
+        write_ini_file(self.config, 'config.ini')
 
     ############################################################
     # info: orientation_requirements_section
@@ -200,7 +233,7 @@ class SettingsApp:
         header_frame.pack(fill="x", pady=5)
 
         # 컬럼 헤더들
-        ttk.Label(header_frame, text="Room Number", width=15).pack(side="left", padx=5)
+        ttk.Label(header_frame, text="ID", width=5).pack(side="left", padx=5)
         ttk.Label(header_frame, text="Room Name", width=20).pack(side="left", padx=5)
         ttk.Label(header_frame, text="Direction", width=15).pack(side="left", padx=5)
         ttk.Label(header_frame, text="", width=5).pack(side="left", padx=5)  # Remove 버튼 위치를 위한 빈 라벨
@@ -223,7 +256,7 @@ class SettingsApp:
         row_frame.pack(fill="x", pady=5)
 
         # 방 번호를 read-only Label로 표시
-        room_number_label = ttk.Label(row_frame, text=str(room_number) if room_number else "Unknown", width=15)
+        room_number_label = ttk.Label(row_frame, text=str(room_number) if room_number else "Unknown", width=5)
         room_number_label.pack(side="left", padx=5)
 
         # 방 이름을 선택할 수 있는 Combobox
@@ -305,7 +338,7 @@ class SettingsApp:
         header_frame = ttk.Frame(self.size_entries_frame)
         header_frame.pack(fill="x", pady=5)
 
-        ttk.Label(header_frame, text="Room Number", width=15).pack(side="left", padx=5)
+        ttk.Label(header_frame, text="ID", width=5).pack(side="left", padx=5)
         ttk.Label(header_frame, text="Room Name", width=20).pack(side="left", padx=5)  # Room Name 컬럼 추가
         ttk.Label(header_frame, text="Min Size", width=15).pack(side="left", padx=5)
         ttk.Label(header_frame, text="Max Size", width=15).pack(side="left", padx=5)
@@ -533,14 +566,17 @@ class SettingsApp:
         write_ini_file(self.constraints, 'constraints.ini')
         messagebox.showinfo("Settings", "Settings saved successfully!")
 
-    def update_room_name(self, room_number_var, room_name_var):
-        try:
-            room_number = int(room_number_var.get())
-            room_name = self.room_names.get(room_number, "Unknown")
-            room_name_var.set(room_name)
-        except ValueError:
-            room_name_var.set("Unknown")
 
+    def update_room_name(self, room_number_label, room_name_var):
+        """방 이름이 변경될 때 호출되는 이벤트 핸들러"""
+        room_number = room_number_label.cget("text")
+        room_name = room_name_var.get().strip()
+        section = "RoomNames"
+        if room_number and room_name:
+            self.config.set(section, room_number, room_name)
+        else:
+            if room_number in self.config[section]:
+                del self.config[section][room_number]
 
 def main():
     root = tk.Tk()
