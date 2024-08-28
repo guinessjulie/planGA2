@@ -138,34 +138,6 @@ class GridPolygon:
         corners = [pair[0] for pair in outers]
         return corners
 
-
-    def sort_corners_clockwise(self, corners):
-        center = np.mean(corners, axis=0)
-        corners.sort(key=lambda c: np.arctan2(c[1] - center[1], c[0] - center[0]))
-        return corners
-
-    def get_polygon_corners7(self, room_number):
-        cell_corners = self.get_cell_corners(room_number)
-        corner_count = defaultdict(int)
-
-        for cell in cell_corners:
-            for corner in cell:
-                corner_count[corner] += 1
-        print(f'[get_polygon_corners] Room{room_number} corner_count={corner_count}')
-        outer_corners = [corner for corner, count in corner_count.items() if count ==1 or count ==3]
-        print(f'[get_polygon_corners] Room{room_number} outer_corners = {outer_corners}')
-        corners = self.sort_and_remove_collinear(outer_corners)
-
-        return corners
-
-    def sort_corners_clockwise(self, corners):
-        center = np.mean(corners, axis=0)
-        top_left = np.min(corners, axis=0)
-        # corners.sort(key=lambda c: np.arctan2(c[1] - center[1], c[0] - center[0]))
-        corners.sort(key=lambda c: np.arctan2(c[1] - top_left[1], c[0] - top_left[0]))
-        return corners
-
-
     def sort_and_remove_collinear(self, corners):
         def is_collinear(p1, p2, p3):
             collinear = (p2[1] - p1[1]) * (p3[0] - p2[0]) == (p3[1] - p2[1]) * (p2[0] - p1[0])
@@ -309,35 +281,64 @@ class GridPolygon:
                    polygon1.corners[(i + 1) % len(polygon1.corners)] == polygon2.corners[j]:
                     return i
         return None
-def print_room_metrics(room_polygons, combined_polygon, grid_polygon, stage):
-    print(f"\nRoom Metrics {stage} Change:")
-    for room_number, room_polygon in room_polygons.items():
-        print(f"Room {room_number}: Area={room_polygon.area / 1_000_000:.2f} m², "
-              f"Perimeter={room_polygon.perimeter / 1000:.2f} m, "
-              f"Simplicity={room_polygon.simplicity:.2f}")
 
-    combined_area = RoomPolygon(combined_polygon).area
-    combined_perimeter = RoomPolygon(combined_polygon).perimeter
-    combined_simplicity = RoomPolygon(combined_polygon).simplicity
 
-    print(f"\nCombined Metrics {stage} Change:")
-    print(f"Area={combined_area / 1_000_000:.2f} m²")
-    print(f"Perimeter={combined_perimeter / 1000:.2f} m")
-    print(f"Simplicity={combined_simplicity:.2f}")
+    def sort_corners_clockwise(self, corners):
+        center = np.mean(corners, axis=0)
+        corners.sort(key=lambda c: np.arctan2(c[1] - center[1], c[0] - center[0]))
+        return corners
 
-    print(f"\nRoom Reference Points and Distances to Boundaries {stage} Change (m):")
-    for room_number, room_polygon in room_polygons.items():
-        if room_polygon.check_constraints(grid_polygon.min_area, grid_polygon.min_length):
-            reference_point = room_polygon.get_reference_point()
-            distances = room_polygon.get_distances_to_boundary(reference_point, combined_polygon)
-            distances_m = {direction: distance for direction, distance in distances.items()}
-            print(f"Room {room_number}: Reference Point {reference_point}, Distances {distances_m}")
-        else:
-            print(f'Room {room_number} does not meet the size constraint')
+    def get_polygon_corners7(self, room_number):
+        cell_corners = self.get_cell_corners(room_number)
+        corner_count = defaultdict(int)
 
-def save_files(polygon_exporter, room_polygons, combined_polygon, suffix):
-    polygon_exporter.save_room_polygons_to_dxf(room_polygons, f"room_polygons_{suffix}.dxf")
-    polygon_exporter.save_polygon_to_dxf(combined_polygon, f"combined_polygon_{suffix}.dxf")
-    polygon_exporter.save_polygon_to_png(room_polygons, f"room_polygons_{suffix}.png")
-    polygon_exporter.save_polygon_to_png_with_dimensions(room_polygons, f"room_polygons_with_dimensions_{suffix}.png")
+        for cell in cell_corners:
+            for corner in cell:
+                corner_count[corner] += 1
+        print(f'[get_polygon_corners] Room{room_number} corner_count={corner_count}')
+        outer_corners = [corner for corner, count in corner_count.items() if count ==1 or count ==3]
+        print(f'[get_polygon_corners] Room{room_number} outer_corners = {outer_corners}')
+        corners = self.sort_and_remove_collinear(outer_corners)
+
+        return corners
+
+    def sort_corners_clockwise(self, corners):
+        center = np.mean(corners, axis=0)
+        top_left = np.min(corners, axis=0)
+        # corners.sort(key=lambda c: np.arctan2(c[1] - center[1], c[0] - center[0]))
+        corners.sort(key=lambda c: np.arctan2(c[1] - top_left[1], c[0] - top_left[0]))
+        return corners
+
+
+    def print_room_metrics(room_polygons, combined_polygon, grid_polygon, stage):
+        print(f"\nRoom Metrics {stage} Change:")
+        for room_number, room_polygon in room_polygons.items():
+            print(f"Room {room_number}: Area={room_polygon.area / 1_000_000:.2f} m², "
+                  f"Perimeter={room_polygon.perimeter / 1000:.2f} m, "
+                  f"Simplicity={room_polygon.simplicity:.2f}")
+
+        combined_area = RoomPolygon(combined_polygon).area
+        combined_perimeter = RoomPolygon(combined_polygon).perimeter
+        combined_simplicity = RoomPolygon(combined_polygon).simplicity
+
+        print(f"\nCombined Metrics {stage} Change:")
+        print(f"Area={combined_area / 1_000_000:.2f} m²")
+        print(f"Perimeter={combined_perimeter / 1000:.2f} m")
+        print(f"Simplicity={combined_simplicity:.2f}")
+
+        print(f"\nRoom Reference Points and Distances to Boundaries {stage} Change (m):")
+        for room_number, room_polygon in room_polygons.items():
+            if room_polygon.check_constraints(grid_polygon.min_area, grid_polygon.min_length):
+                reference_point = room_polygon.get_reference_point()
+                distances = room_polygon.get_distances_to_boundary(reference_point, combined_polygon)
+                distances_m = {direction: distance for direction, distance in distances.items()}
+                print(f"Room {room_number}: Reference Point {reference_point}, Distances {distances_m}")
+            else:
+                print(f'Room {room_number} does not meet the size constraint')
+
+    def save_files(polygon_exporter, room_polygons, combined_polygon, suffix):
+        polygon_exporter.save_room_polygons_to_dxf(room_polygons, f"room_polygons_{suffix}.dxf")
+        polygon_exporter.save_polygon_to_dxf(combined_polygon, f"combined_polygon_{suffix}.dxf")
+        polygon_exporter.save_polygon_to_png(room_polygons, f"room_polygons_{suffix}.png")
+        polygon_exporter.save_polygon_to_png_with_dimensions(room_polygons, f"room_polygons_with_dimensions_{suffix}.png")
 

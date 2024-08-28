@@ -1,9 +1,15 @@
+import hashlib
 import numpy as np
 from datetime import datetime
 
 def get_month_day_4_digit():
     now = datetime.now()
     return  now.strftime('%m%d')
+
+def generate_unique_id(seed_cell_list):
+    seed_str = str(seed_cell_list)
+    unique_id = hashlib.sha256(seed_str.encode('utf-8')).hexdigest()
+    return unique_id
 
 
 def get_hour_min_4_digit():

@@ -353,8 +353,8 @@ class GridDrawer:
         # get  the scale
         scale = 1000  # 1 unit = 1000mm
         wall_thickness = 5  # Wall thickness in mm
-        scale = read_config_int('constraints.ini','Metrics',  'scale')
-        wall_thickness = read_config_int('constraints.ini','Metrics','wall_thickness')
+        scale = read_config_int('config.ini','Metrics',  'scale')
+        wall_thickness = read_config_int('config.ini','Metrics','wall_thickness')
 
         # Create a plot
         fig, ax = plt.subplots()
@@ -410,7 +410,7 @@ class GridDrawer:
                 # underway Room Labels
                 room_names = get_room_names()
                 metric_label =  'm²' # todo right now using square meters for area, implement for general purporse
-                area_mm2 = metrics[room_id]
+                area_mm2 = metrics[room_id-1] # area_mm2이 단순 리스트로 되어 있어서 0부터 계산하는데 반해  room_id는 1부터 시작
                 area_sqm = area_mm2 / 1_000_000
                 ax.text(x_mean, y_mean, f'{room_names[room_id]}\n{area_sqm:.1f}{metric_label}', color='black', ha='center', va='center', fontsize=10)
 

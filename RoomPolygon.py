@@ -1,8 +1,6 @@
 import math
 from shapely.geometry import LineString, Point, Polygon, MultiPoint, MultiLineString
 
-# todo room_poloygon에서 구한 area/perimeter와 Floorplan에서 구한 것이  값이 완전 다르다.
-
 class BoundingBox:
     def __init__(self, corners):
         self.min_x = min(point[0] for point in corners)
@@ -37,9 +35,10 @@ class RoomPolygon:
         self.area = self.calculate_area()  # todo only to compare with polylgon's area and perimeters
         self.perimeter = self.calculate_perimeter()  # todo only to compare with polylgon's area and perimeters
         self.min_length, max_length = self.calculate_min_max_length()
-        self.complexity = self.calc_complexity()
+        self.simplicity = self.calc_simplicity()
         self.rectangularity =  self.calc_rectangularity()
         self.regularity = self.calc_regularity()
+        self.pa_ratio = self.calc_pa_ratio()
 
     @property
     def corners(self):
@@ -53,13 +52,14 @@ class RoomPolygon:
         self.area = self.calculate_area()
         self.perimeter = self.calculate_perimeter()
         self.min_length, max_length = self.calculate_min_max_length()
-        self.complexity = self.calc_complexity()
+        self.simplicity = self.calc_simplicity()
         self.rectangularity =  self.calc_rectangularity()
         self.regularity = self.calc_regularity()
+        self.pa_ratio= self.calc_pa_ratio()
 
     # underway convert to BoundingBox class
 
-    def calc_complexity(self): # todo _corners 값이 바뀌어도 실행이 되는지 확인
+    def calc_simplicity(self): # todo _corners 값이 바뀌어도 실행이 되는지 확인
         vertex_count = len(self._corners)
         if vertex_count < 4:
             return 1.0
@@ -71,6 +71,10 @@ class RoomPolygon:
     # todo _corners 값이 바뀌어도 실행이 되는지 확인
     def calc_regularity(self):
         return self.rectangularity * self.bb.as_ratio
+
+
+    def calc_pa_ratio(self):
+        return 16 * self.area / self.perimeter ** 2
 
     def calculate_metrics(self):
         self.area = self.calculate_area()

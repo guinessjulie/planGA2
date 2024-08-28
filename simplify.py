@@ -232,6 +232,7 @@ def exchange_protruding_cells_debug(floorplan_origin, iteration=1, display=False
         # grid_to_screen_image(floorplan, no=i, format='png', prefix = filename , text = text)
     return floorplan
 
+# info to debug use exchange_protruding_cells_debug version
 def exchange_protruding_cells(floorplan_origin, iteration=1, display=False, save=True):
     floorplan = floorplan_origin.copy()
     cascading_cells = create_cascading_cells(floorplan)
@@ -240,8 +241,6 @@ def exchange_protruding_cells(floorplan_origin, iteration=1, display=False, save
         return
 
     cascading_cells_list = list(map(tuple, np.argwhere(cascading_cells == 1)))
-    candidate_cascading_cells_list = cascading_cells_list.copy()
-    save_path = trivial_utils.create_folder_by_datetime()
     i = 0
     while len(cascading_cells_list) > 0:
         i += 1
@@ -249,18 +248,19 @@ def exchange_protruding_cells(floorplan_origin, iteration=1, display=False, save
         current_room_number = floorplan[cell]
         neighbors = all_active_neighbors(cell, floorplan) # 선택된 셀의 neighbors들 중에서 선택
         neighbors_room_to_exchange = list(set([ floorplan[n] for n in neighbors if floorplan[n] != current_room_number])) # 같은 방 제외
-        # filtering1: 네이버 room들 중에서 다른 방 선택
+
+        # filtering 1: 인접 방 선택
         candidate_rooms = [room for room in neighbors_room_to_exchange]
-        if cell in changed_cell_history: # filtering more
+        if cell in changed_cell_history: # filtering more: 해당 셀이 이전에 시도되지 않은 방 선택
             candidate_rooms = [room for room in candidate_rooms if room not in changed_cell_history[cell]]
 
-        # 교환하자.
-        # candidate_rooms가 success하거나 없어질 때까지 새 방을 고른다. todo candidate_rooms는 never 몽땅 없어지지 않는다. 그러므로 while에서 무한루프를 돈다. 무엇이 stop시킬 수 있는지를 고민해보자. 아마도 changed_cell_history에서 더이상 가져올 게 없을 때를 보는 게 맞는 거 같다.
+        # 교환.
+        # candidate_rooms가 success하거나 없어질 때까지 새 방을 고른다.
+        # candidate_rooms는 never 몽땅 없어지지 않는다.  changed_cell_history에서 더이상 가져올 게 없을 때 스톱한다.
         w = 0
-        if len(candidate_rooms) == 0:
-            # candidate_cascading_cells_list.remove(cell)
-            cascading_cells_list.remove(cell) ## todo 3. 0731 to see candidate_cascading_cell_list => cascading_cell_list
-            continue # []빈 candidate_room을 가졌으므로 candidatae_cascading_cell_list도 업데이트해야 됨
+        if len(candidate_rooms) == 0: # info cascading_cell 이지만 바꿀 Room 이 없으므로 cascading_cell 리스트에서 삭제. 그러므로 최종 cascading_cell은 지워지지 않는다.
+            cascading_cells_list.remove(cell)
+            continue # []빈 candidate_room을 가졌으므로 candidatae_cascading_cell_list도 업데이트해야 됨. 이 셀을 리스트에서 지우고 올라가서 다른 셀 선택.
         elif len(candidate_rooms) > 1:
             best_room = candidate_rooms[0]
             gap = count_cascading_cells_neighbors(floorplan, cell, current_room_number, best_room)
@@ -275,27 +275,14 @@ def exchange_protruding_cells(floorplan_origin, iteration=1, display=False, save
 
         if is_valid_change(floorplan, cell, best_room, changed_cell_history): # 성공했다면
             update_cascading(floorplan,cell, neighbors, cascading_cells_list, cascading_cells)
-            # info: uncomment to save processing steps png file
-            # text = (f'Step {i}  {cell}: {current_room_number} => {best_room}\nhistory={changed_cell_history}\n'
-            #    f'cascading({len(cascading_cells_list)}) = {cascading_cells_list}')
 
         else:
             candidate_rooms.remove(best_room)  # valid 하지 않으므로 지우고 다른 걸 선택한다.
-            # todo to avoid infinite loop 현재 안되는 것을 history에 추가
             if cell not in changed_cell_history:
                 changed_cell_history[cell] = [best_room]
             else:
                 changed_cell_history[cell].append(best_room)
-            # info: uncomment following three lines to save processing steps png file
-            # text = (f'Step {i} Failed to change {cell} from {current_room_number} to {best_room}\n'
-            #        f'becuase ( {cell} to {best_room}) is not valid change')
 
-        # info: uncomment following four lines to save processing steps png file
-        # grid_print_as_int(cascading_cells)
-        # full_path = trivial_utils.create_file_name_in_path(path = save_path,  prefix = 'Simplifying', postfix_number=i )
-        # num_rooms = read_config_int('constraints.ini', 'Metrics', 'num_rooms')
-        # GridDrawer.color_cells_by_value(floorplan, filename=full_path, text=text, display=display, save=save, num_rooms = num_rooms)
-        # # grid_to_screen_image(floorplan, no=i, format='png', prefix = filename , text = text)
     return floorplan
 
 def create_cascading_cells(floorplan):

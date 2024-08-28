@@ -24,6 +24,22 @@ def read_str_constraints(filename, section):
         for key, value in config.items(section):
             constraints[key] = value
     return constraints
+
+def read_str_constraints_from(config, section): # info read from configparser object
+    constraints = {}
+    if section in config:
+        for key, value in config.items(section):
+            constraints[key] = value
+    return constraints
+
+def read_ken_int_constraints_from(config, section): # info read key as int
+    constraints = {}
+    if section in config:
+        for key, value in config.items(section):
+            constraints[int(key)] = value
+    return constraints
+
+
 def read_config_boolean(filename, section, key):
     config = load_config(filename)
     return config.getboolean(section, key)

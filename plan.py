@@ -8,19 +8,21 @@ import numpy as np
 import plan_utils
 from GridDrawer import GridDrawer
 import itertools
+from collections import defaultdict
+import random
 from measure import categorize_boundary_cells
-from config_reader import read_constraint, read_config_boolean, check_adjacent_requirement
+from config_reader import read_constraint, read_config_boolean, check_adjacent_requirement, read_config_int
 from cells_utils import  is_valid_cell, is_inside
 from plan_utils import dict_value_to_coordinates
 from options import Options
 
 # todo 1: 사이즈 작은 사이즈일 수록 빈 인접셀 적다. 이를 이용해서 초기화에 활용
 # todo 2: 인접 리스트를 만들어서 해당 조건 만족하도록
-# todo 3: 사이즈 contstraint를 이용하여 초기 셀 설정 시 적용. 예:  living room 크기가 bathroom 크기의 2배 이상인 경우, 인접 셀 두 개를 초기 셀에 할당
-# todo 4: 방향 constraint를 이용하여 초기 셀 설정시 적용 가장 남쪽에 있는 셀이 Livingroom 북쪽에 있는 셀은 부엌 및 bathroom => done
-# todo 5: 인접조건 neighbor 갯수가 가장 많은 것을 living room으로? 그래프 구조 활용
 # todo 6: Graph의 구조가 같은지를 체크할 수 있도록 GraphGrid에 equality function들을 만들었다. 이를 활용해서 인접성 리스트를 optimize 하자
-
+# todo 3: 10개를  Seed에서 하는데 확인. 이 10개의 fitness가 유사하다. 그러므로 당분간? 10개씩 하지 말고? 다른 seed로 해보자.
+# todo 4: 분리
+# info : adj_requirements를 추가했으나 성과가 없다. graph를 비교해서 방을 바꾸는 방법으로 가는 것도 방법
+# todo 0828: 일단 seed를 출력하고 fitness를 보자
 
 
 def create_req_graph(adjacency_list):
@@ -31,33 +33,335 @@ def create_req_graph(adjacency_list):
     return adjacency_graph
 
 def locate_initial_cell(empty_grid, k):
+    options = Options()
     ini_filename = 'constraints.ini'
     adjacency_list = check_adjacent_requirement()
     orientation_requirements = read_constraint(ini_filename, 'OrientationRequirements')
-    initialized_grid, initial_cells = place_seed(to_np_array(empty_grid), k, adjacency_list )
-    initialized_grid, initial_cells = relocate_by_orientation(initialized_grid, initial_cells, orientation_requirements)
+
+    initialized_grid, initial_cells = place_seed(to_np_array(empty_grid), k, adjacency_list ) #info now seed does not have room number
+    display_process(initialized_grid, k, options, "Seed0")
+    initialized_grid, remaining_positions = assign_rooms_by_orientation_adjacency(initialized_grid, initial_cells, orientation_requirements, adjacency_list)
+    # initialized_grid, initial_cells = relocate_by_orientation_and_adjacency(initialized_grid, initial_cells,orientation_requirements, adjacency_list)
+#   display_process(initialized_grid, k, options, "Seed1")
+#   initialized_grid, initial_cells = relocate_by_adjacency(initialized_grid, initial_cells, adjacency_requirements=adjacency_list)
+    display_process(initialized_grid, k, options, "Seed2")
     return initialized_grid, initial_cells
 
-def display_process(initialized_grid, initial_cells, k,options):
+def display_process(initialized_grid, k,options, prefix):
     # todo 20240814 room_number 가 언제 할당되나 조사
     # initialized_grid, initial_cells = place_k_rooms_on_grid(to_np_array(empty_grid), k) # todo place_seed에서 그래프 만족시키는 seed 새로 만듦
     path = trivial_utils.create_folder_by_datetime()
-    full_path = trivial_utils.create_filename(path, 'Init0', '', '', 'png')
+    full_path = trivial_utils.create_filename(path, prefix, '', '', 'png')
     GridDrawer.color_cells_by_value(initialized_grid, full_path, display=options.display, save=options.save,
                                     num_rooms=k)
 
 
-    full_path = trivial_utils.create_filename(path, 'Init1', '', '', 'png')
-    # print(f'adjacency considered={initialized_grid}')
-    GridDrawer.color_cells_by_value(initialized_grid, full_path, display=options.display, save=options.save, num_rooms=k)
-    # print(f'relocated:{initial_cells}\n{initialized_grid}')
+def calculate_manhattan_distances(cell_positions):
+    distances = []
+
+    # 리스트로 변환하여 인덱스로 접근할 수 있도록 함
+    cell_positions_list = list(cell_positions)
+
+    for i in range(len(cell_positions_list)):
+        for j in range(i + 1, len(cell_positions_list)):
+            pos1 = cell_positions_list[i]
+            pos2 = cell_positions_list[j]
+            manhattan_distance = abs(pos1[0] - pos2[0]) + abs(pos1[1] - pos2[1])
+            distances.append(((pos1, pos2), manhattan_distance))
+
+    return distances
+
+def calculate_relative_scores(cell_positions):
+    scores = {pos: {'north': 0, 'south': 0, 'west': 0, 'east': 0} for pos in cell_positions}
+
+    # 북-남 방향 정렬 (북쪽이 먼저 오도록 정렬)
+    sorted_by_north_south = sorted(cell_positions, key=lambda x: x[0])
+    # 동-서 방향 정렬 (서쪽이 먼저 오도록 정렬)
+    sorted_by_east_west = sorted(cell_positions, key=lambda x: x[1])
+
+    # 북쪽과 남쪽 점수 계산
+    for i, pos in enumerate(sorted_by_north_south):
+        scores[pos]['north'] = i  # 북쪽 점수는 인덱스가 작을수록 높음
+        scores[pos]['south'] = len(sorted_by_north_south) - 1 - i  # 남쪽 점수는 반대 방향으로
+
+    # 서쪽과 동쪽 점수 계산
+    for i, pos in enumerate(sorted_by_east_west):
+        scores[pos]['west'] = i  # 서쪽 점수는 인덱스가 작을수록 높음
+        scores[pos]['east'] = len(sorted_by_east_west) - 1 - i  # 동쪽 점수는 반대 방향으로
+
+    return scores
+# info improved code replaced belowwer
+# def calculate_sorted_distances(cell_positions):
+#     sorted_distances = {}
+#     cell_positions_list = list(cell_positions)
+#     for i in range(len(cell_positions_list)):
+#         pos1 = cell_positions_list[i]
+#         distances = []
+#         distances_dict = {}
+#         for j in range(len(cell_positions_list)):
+#             if i != j:
+#                 pos2 = cell_positions_list[j]
+#                 manhattan_distance = abs(pos1[0] - pos2[0]) + abs(pos1[1] - pos2[1])
+#                 distances.append((pos2, manhattan_distance))
+#                 # distances[pos2] = manhattan_distance # #underway: convert to sorted_distances to dictionary
+#                 distances_dict[pos2] = manhattan_distance # #underway: convert to sorted_distances to dictionary
+#         # 거리 순으로 정렬
+#         # sorted_distances[pos1] = sorted(distances, key=lambda x: x[1]) #underway: convert to sorted_distances to dictionary
+#         sorted_distances[pos1] = sorted(distances_dict.items(), key=lambda x: x[1], reverse = True)
+#     return sorted_distances
+#######################################################
+####  여기부터 수정
+#####################################################
 
 
-def create_floorplan(initialized_grid,initial_cells, k, options):
+def get_orientation_scores(cell_positions):
+    north = sorted(cell_positions, key=lambda pos: pos[0], reverse=True)
+    west = sorted(cell_positions, key=lambda pos: pos[1], reverse=True)
 
-    display_process(initialized_grid, initial_cells, k, options)
-    floorplan = allocate_rooms(initialized_grid, initial_cells, display =  options.display, save=options.save, num_rooms=k)
-    return floorplan, initial_cells
+    scores = {
+        'north':  north,
+        'south':  north[::-1],
+        'west':  west,
+        'east':  west[::-1]
+    }
+    return scores
+
+
+def delete_cell_from(scores, cell):
+    for direction, cell_list in scores.items():
+        if cell in cell_list:
+            scores[direction].remove(cell)
+    return scores
+
+# 각 셀 사이의 거리를 구한 후
+def calculate_sorted_distances(cell_positions):
+    distances = {}
+    for pos1 in cell_positions:
+        distances[pos1] = sorted(
+            [(pos2, abs(pos1[0] - pos2[0]) + abs(pos1[1] - pos2[1])) for pos2 in cell_positions if pos1 != pos2],
+            key=lambda x: x[1],
+            reverse = True)
+    return distances
+
+
+def assign_by_orientation(grid, cell_positions, orientation_requirements):
+    new_grid = np.copy(grid)
+    scores = get_orientation_scores(cell_positions)
+
+    for room_num, direction in orientation_requirements.items():
+        pos = scores[direction].pop()
+        delete_cell_from(scores, pos)
+        new_grid[pos] = room_num
+
+    return new_grid
+
+def get_assigned_cell_positions(grid):
+    return {grid[tuple(cell)]:tuple(cell) for cell in np.argwhere((grid > 0) & (grid != 255))} # room_id : position
+
+def assign_by_adjacency(grid, cell_positions, adjacency_requirements):
+    new_grid = np.copy(grid)
+    #assigned_room_positions = {
+    #    new_grid[tuple(cell)]: tuple(cell)
+    #    for cell in np.argwhere((new_grid > 0) & (new_grid != 255))
+    #}
+    assigned_room_positions = get_assigned_cell_positions(grid)
+    distances = calculate_sorted_distances(cell_positions)
+    adj_dict = defaultdict(list)
+
+    for a, b in adjacency_requirements:
+        adj_dict[a].append(b)
+        adj_dict[b].append(a)
+
+    for room_id, adj_list in adj_dict.items():
+        if set(assigned_room_positions.keys()) == set(range(1, len(cell_positions) + 1)):
+            break
+
+        if not set(adj_list).issubset(assigned_room_positions):
+            unassigned_pos = set(distances.keys()) - set(assigned_room_positions.values())
+            if unassigned_pos:
+                room_pos = unassigned_pos.pop()
+                unassigned_pos_distances = [
+                    room_dist for room_dist in distances[room_pos]
+                    if room_dist[0] not in assigned_room_positions.values()
+                ]
+
+                for adj_id in adj_list:
+                    if adj_id not in assigned_room_positions and unassigned_pos_distances:
+                        adj_pos, _ = unassigned_pos_distances.pop()
+                        new_grid[adj_pos] = adj_id
+                        assigned_room_positions[adj_id] = adj_pos
+
+        elif room_id in assigned_room_positions:
+            room_pos = assigned_room_positions[room_id]
+            unassigned_pos_distances = [
+                room_dist for room_dist in distances[room_pos]
+                if room_dist[0] not in assigned_room_positions.values()
+            ]
+            for adj_id in adj_list:
+                if adj_id not in assigned_room_positions and unassigned_pos_distances:
+                    adj_pos, _ = unassigned_pos_distances.pop()
+                    new_grid[adj_pos] = adj_id
+                    assigned_room_positions[adj_id] = adj_pos
+
+    # Ensure that any unassigned positions and room IDs are handled
+    # all_positions = set(cell_positions)
+    # unassigned_pos_set = all_positions - set(assigned_room_positions.values())
+    # all_room_ids = set(range(1, len(cell_positions) + 1))
+    # unassigned_id_set = all_room_ids - set(assigned_room_positions.keys())
+#
+    # for pos, room_id in zip(unassigned_pos_set, unassigned_id_set):
+    #     new_grid[pos] = room_id
+
+    return new_grid
+
+
+def fill_unassigned(grid, cell_positions):
+    assigned_room_positions = get_assigned_cell_positions(grid)
+    unassigned_pos_set = set(cell_positions) - set(assigned_room_positions.values())
+    all_room_ids = set(range(1, len(cell_positions) + 1))
+    unassigned_id_set = all_room_ids - set(assigned_room_positions.keys())
+
+    for pos, room_id in zip(unassigned_pos_set, unassigned_id_set):
+        grid[pos] = room_id
+    return grid
+
+def assign_rooms_by_orientation_adjacency(grid, cell_positions, orientation_requirements, adjacency_requirements):
+    # 1. 방향 요구 사항에 따라 방 배치
+    new_grid = grid.copy()
+    if random.choice([True, False]) :
+        new_grid = assign_by_orientation(grid, cell_positions, orientation_requirements)
+        print(f'by orientation')
+    # 2. 인접성 요구 사항에 따라 방 배치
+    if random.choice([True, False]) :
+        new_grid = assign_by_adjacency(new_grid, cell_positions, adjacency_requirements)
+        print(f'by adjacency')
+
+    # 3. 빈 방셀을 모두 무작위로 assign
+    new_grid = fill_unassigned(new_grid, cell_positions)
+
+    return new_grid, cell_positions
+
+
+def assign_rooms_by_orientation_adjacency_save(grid, cell_positions, orientation_requirements, adjacency_requirements):
+    def get_orientation_scores(cell_positions):
+        scores = {}
+        scores['north'] = sorted(cell_positions, key=lambda pos:pos[0], reverse = True)
+        scores['south'] = scores['north'][::-1]
+        scores['west'] = sorted(cell_positions, key=lambda pos:pos[1], reverse = True)
+        scores['east'] = scores['west'][::-1]
+        return scores
+
+    def delete_cell_from(scores, cell):
+        for direction, cell_list in scores.items():
+            if cell in cell_list:
+                scores[direction].remove(cell)
+        return scores
+
+    new_grid = np.copy(grid)
+    cp = cell_positions.copy()
+    scores = get_orientation_scores(cp)
+    for room_num, direction in orientation_requirements.items():
+        pos = scores[direction].pop()
+        delete_cell_from(scores, pos)
+        new_grid[pos] = room_num
+
+    assigned_cells = np.argwhere((new_grid > 0) & (new_grid != 255)) #
+    assigned_room_positions = {new_grid[tuple(cell)]: tuple(cell) for cell in assigned_cells} # info  각 방 번호를 키로, 해당 방 번호가 할당된 위치를 값으로 갖는 딕셔너리를 만드
+
+    # by adjacency_requirements
+    distances = calculate_sorted_distances(cp)
+
+    # 2. 인접성 요구사항 반영하여 방 배치
+    adj_dict = defaultdict(list) #  info defaultdict를 사용하여, 딕셔너리의 기본값이 list인 딕셔너리를 생성. 이렇게 하면 키가 없는 경우 자동으로 빈 리스트가 생성됨.
+    {adj_dict[a].append(b) or adj_dict[b].append(a) for a, b in adjacency_requirements}
+    adj_dict = dict(adj_dict)
+    processed_room = ()
+    for room_id, adj_list in adj_dict.items():
+        assigned_room_id = set(assigned_room_positions.keys())
+        if assigned_room_id == set(range(1, len(cell_positions)+1)) : # 모든 room이 다 assign되었다면 아무것도 할 필요없다.
+            break
+        adj_list_set = set(adj_list)
+        if  adj_list_set.issubset(assigned_room_id) :# info adj_list_set의 모든 원소가 assigned_room_positions의 키에 속하는지 확인, 즉 모든 requirement 가 이미 다 assign되어 있으므로 아무 작업도 필요없다.
+            continue
+
+        if room_id not in assigned_room_positions:
+            # todo how: rooms_pos_distances에서 가져온다.
+            # room_id (4)를 어딘가에 assign 해야돼  1 혹은 7과 가까운 포인트를 찾자.
+            print(f'room_id = {room_id}')
+            # todo how: rooms_pos_distances에서 가져온다., room_id는 4지만 이것은 어디에도 없다. 그러니까 distances
+            # todo room_pos_distances에서 assigned_room_positions를 제외한다.
+            unassigned_pos = set(c for c in distances.keys()) - set(assigned_room_positions.values()) # todo 여기중 하나를 선택해서 room_id 를 부여하는데, distances에서 가까운 것을 찾자.
+            room_pos = unassigned_pos.pop()
+            room_pos_distances = distances[room_pos].copy()
+            unassigned_pos_distances = [room_dist for room_dist in room_pos_distances if room_dist[0] not in set(assigned_room_positions.values())]  # info  이미  방번호가 부여된 셀을 제외하고 나머지 셀들을 거리 순으로 정렬
+            while adj_list :
+                adj_id = adj_list.pop()
+                adj_pos, dist = unassigned_pos_distances.pop()
+                new_grid[adj_pos] = adj_id
+                assigned_room_positions[adj_id] = adj_pos
+
+            # room_id (4)를 어딘가에 assign 해야돼  1 혹은 7과 가까운 포인트를 찾자.
+            for adj in adj_list_set:
+                print(f'adj={adj}')
+                if adj in assigned_room_positions:
+                    adj_pos = assigned_room_positions[adj]
+                    print(f'adj_pos = {adj_pos},distance[{adj_pos}]= {distances[adj_pos]}')
+                    break
+
+        elif room_id in assigned_room_positions:
+            room_pos = assigned_room_positions.get(room_id)
+            adj_rooms_assigned = [(adj_room_id, assigned_room_positions[adj_room_id]) for adj_room_id in adj_list_set if
+                         adj_room_id in assigned_room_positions] # 인접 요구 방번호 중 방 번호가 이미 셀이 부여된 경우 방번호와 위치를 가져온다. #underway: adj_unassigned_room이 비는 경우 미리 건너뛴다. => adj_list_set의 방번호가 assigned_
+            room_pos_distances = distances[room_pos] # info current room_id와 다른 모든 셀들 좌표 / 거리 쌍. 거리 순으로
+            unassigned_pos_distances = [room_dist for room_dist in room_pos_distances if room_dist[0] not in set(assigned_room_positions.values())] # info  이미  방번호가 부여된 셀을 제외하고 나머지 셀들을 거리 순으로 정렬
+            adj_unassigned_rooms = set(adj_dict[room_id]) - set(room for room, pos in adj_rooms_assigned)
+            # room_id 부여
+            for adj_room_id in adj_unassigned_rooms:
+                cell, dist  = unassigned_pos_distances.pop()
+                new_grid[cell] = adj_room_id
+                assigned_room_positions[adj_room_id] = cell # update_assigned_room_positions
+
+    unassigned_pos_set = {room_dist[0] for room_dist in room_pos_distances if room_dist[0] not in set(assigned_room_positions.values())}
+    unassigned_id_set = set(range(1, len(cell_positions) + 1)) - set(assigned_room_positions.keys())
+    for pos, room_id in zip(unassigned_pos_set, unassigned_id_set):
+        new_grid[pos] = room_id
+
+    return new_grid, cell_positions
+
+
+def assign_rooms_by_orientation(grid, cell_positions, orientation_requirements):
+    scores = calculate_relative_scores(cell_positions)
+    new_grid = np.copy(grid)
+
+    for room_num, direction in orientation_requirements.items():
+        best_pos = None
+        best_score = -float('inf')
+
+        for pos, score in scores.items():
+            if direction == 'north' and score['north'] > best_score:
+                best_score = score['north']
+                best_pos = pos
+            elif direction == 'south' and score['south'] > best_score:
+                best_score = score['south']
+                best_pos = pos
+            elif direction == 'west' and score['west'] > best_score:
+                best_score = score['west']
+                best_pos = pos
+            elif direction == 'east' and score['east'] > best_score:
+                best_score = score['east']
+                best_pos = pos
+
+        if best_pos:
+            new_grid[best_pos] = room_num
+            cell_positions.remove(best_pos)
+
+    return new_grid, cell_positions
+
+def create_floorplan(initialized_grid, k, options):
+    grid_copy = initialized_grid.copy()
+    display_process(grid_copy, k=k, options=options, prefix = 'Init0')
+    floorplan = allocate_rooms(grid_copy, display =  options.display, save=options.save, num_rooms=k)
+    return floorplan
 
 
 #  현재 셀이 valid 한가
@@ -119,7 +423,7 @@ def get_unique_values(floorplan, cells):
     return unique_values
 
 # todo active_cells를 복사하지 않고 바로 이용
-def allocate_rooms(floorplan, obtainable_cells, display=False, save=True, num_rooms=7):
+def allocate_rooms(floorplan, display=False, save=True, num_rooms=7):
 
     # todo 여기서는 그냥 choose만 하고, return 값은 새 셀의 좌표와 방향
     def choose_new_adjacent_cell(floorplan, cell):
@@ -700,47 +1004,15 @@ def place_seed(grid_arr, k, adjacency_graph):
     cells_coords = set()
     rooming_grid = grid_arr.copy()
     m, n = grid_arr.shape
-    room_cell_dict = dict()
+
     while rooms_placed < k:
         row, col = random.randint(0, m - 1), random.randint(0, n - 1)
         if rooming_grid[row, col] == 0:  # Ensure the cell is within the floorplan and unroomed
             rooms_placed += 1
-            rooming_grid[row, col] = rooms_placed
-            cells_coords.add((row, col))
-            room_cell_dict[rooms_placed] = (row, col)
+            rooming_grid[row, col] = 255   # 방을 표시하기 위해 값을 1로 설정
+            cells_coords.add((row, col))  # 셀의 위치를 저장
 
-
-# todo reassign_seeds_based_on_proximity에서 동일 셀에게 다른 룸을 부여하는 문제가 생김 그래서 일단 이것은 스킵하고 나중에 다시
-#    closest_room_pairs = find_closest_pairs(room_cell_dict)
-#    room_cell_dict = reassign_seeds_based_on_proximity(closest_room_pairs, adjacency_graph, room_cell_dict)
-#   for room_num, pos in room_cell_dict.items():
-#        rooming_grid[pos] = room_num
-
-
-    return rooming_grid, room_cell_dict
-
-# todo 이것은 제대로 동작하지 않는다. 나중에 다시 보도록 합시다.
-def reassign_seeds_based_on_proximity(closest_room_pairs, adjacency_requirements, room_seeds):
-    new_seeds = room_seeds.copy()
-    used_rooms = set()
-
-    for (req_room1, req_room2) in adjacency_requirements:
-        for (close_room1, close_room2), _ in closest_room_pairs:
-            if close_room1 not in used_rooms and close_room2 not in used_rooms:
-                # 인접 요구사항과 가장 가까운 방 쌍을 매칭
-                if (req_room1, req_room2) == (close_room1, close_room2) or (req_room2, req_room1) == (close_room1, close_room2):
-                    new_seeds[req_room1], new_seeds[req_room2] = new_seeds[close_room1], new_seeds[close_room2]
-                    used_rooms.add(req_room1)
-                    used_rooms.add(req_room2)
-                    break
-                # 위치 교환
-                elif req_room1 == close_room1 or req_room2 == close_room2:
-                    new_seeds[req_room1], new_seeds[req_room2] = new_seeds[close_room2], new_seeds[close_room1]
-                    used_rooms.add(req_room1)
-                    used_rooms.add(req_room2)
-                    break
-
-    return new_seeds
+    return rooming_grid, cells_coords
 
 
 def is_position_correct(cell_positions, color, position, orientation_requirements):
@@ -776,7 +1048,26 @@ def find_extreme_positions(cells_coords):
     easts ={room_no:pos for room_no, pos in cells_coords.items() if pos[1] == maxy}
 
     return norths, souths, wests, easts
-def relocate_by_orientation(grid, cell_positions, orientation_requirements):
+
+
+import numpy as np
+import random
+
+
+def relocate_by_orientation_and_adjacency(grid, cell_positions, orientation_requirements, adjacency_requirements):
+    def find_extreme_positions(cell_positions):
+        # 각 방향에서 가장 극단적인 위치를 찾는 함수
+        norths = sorted(cell_positions, key=lambda x: x[0])  # 최북단
+        souths = sorted(cell_positions, key=lambda x: -x[0])  # 최남단
+        wests = sorted(cell_positions, key=lambda x: x[1])  # 최서단
+        easts = sorted(cell_positions, key=lambda x: -x[1])  # 최동단
+        return norths, souths, wests, easts
+
+    def remove_position_from_all_directions(pos, direction_to_list):
+        # 모든 방향 리스트에서 사용된 위치를 제거
+        for direction in direction_to_list.values():
+            if pos in direction:
+                direction.remove(pos)
 
     norths, souths, wests, easts = find_extreme_positions(cell_positions)
     direction_to_list = {
@@ -786,22 +1077,167 @@ def relocate_by_orientation(grid, cell_positions, orientation_requirements):
         "west": wests
     }
 
+    new_grid = np.copy(grid)
+
+    # 1. 방향 요구사항 반영하여 방 배치
+    for key, direction in orientation_requirements.items():
+        extreme_positions = direction_to_list[direction]
+
+        # 가장 극단적인 위치를 찾을 때까지 반복
+        while extreme_positions:
+            pos = extreme_positions.pop(0)  # 해당 방향의 가장 극단적인 위치 선택
+            if pos in cell_positions:  # 위치가 아직 사용되지 않았는지 확인
+                new_grid[pos] = key  # 해당 위치에 방 번호 설정
+                cell_positions.remove(pos)  # 사용한 위치를 제거
+                remove_position_from_all_directions(pos, direction_to_list)  # 모든 방향 리스트에서 위치 제거
+                break  # 방 배치가 완료되었으므로 루프 탈출
+
+    # 2. 인접성 요구사항 반영하여 방 배치
+    for room_a, room_b in adjacency_requirements:
+        if room_a in orientation_requirements or room_b in orientation_requirements:
+            continue  # 이미 배치된 방에 대해서는 처리하지 않음
+
+        if room_a in cell_positions:
+            pos_a = random.choice(list(cell_positions))
+            new_grid[pos_a] = room_a
+            cell_positions.remove(pos_a)
+
+        if room_b in cell_positions:
+            pos_b = random.choice(list(cell_positions))
+            new_grid[pos_b] = room_b
+            cell_positions.remove(pos_b)
+
+    return new_grid, cell_positions
+
+def relocate_by_orientation(grid, cell_positions, orientation_requirements):
+    def find_extreme_positions(cell_positions):
+        # 각 방향에서 가장 극단적인 위치를 찾는 함수
+        norths = sorted(cell_positions, key=lambda x: x[0])  # 최북단
+        souths = sorted(cell_positions, key=lambda x: -x[0])  # 최남단
+        wests = sorted(cell_positions, key=lambda x: x[1])  # 최서단
+        easts = sorted(cell_positions, key=lambda x: -x[1])  # 최동단
+        return norths, souths, wests, easts
+
+    norths, souths, wests, easts = find_extreme_positions(cell_positions)
+    direction_to_list = {
+        "north": norths,
+        "south": souths,
+        "east": easts,
+        "west": wests
+    }
+
+    new_grid = np.copy(grid)
+
+    # orientation_requirements에 있는 방들만 설정
+    for key, direction in orientation_requirements.items():
+        extreme_positions = direction_to_list[direction]
+
+        if extreme_positions:
+            pos = extreme_positions[0]  # 해당 방향의 가장 극단적인 위치 선택
+            new_grid[pos] = key  # 해당 위치에 방 번호 설정
+            cell_positions.remove(pos)  # 사용한 위치를 제거
+
+    return new_grid, cell_positions
+
+import random
+
+import numpy as np
+
+def relocate_by_adjacency(grid, cell_positions, adjacency_requirements):
     m, n = grid.shape
     new_grid = np.copy(grid)
-    # cell_positions = {grid[row, col]: (row, col) for row, col in cells_coords.items()}
 
-    for room_num, ot_req  in orientation_requirements.items():
-        cell_list_on_direction = direction_to_list[ot_req] #norths, souths, easts, wests 중 하나
-        if room_num not in cell_list_on_direction.keys(): # 만일 room_num의 constraint가 south인데 room_num이 souths에 없다면 souths 중 하나를 찾아서 swap
-            new_room_num, new_pos = random.choice(list(cell_list_on_direction.items()))
-            swap_positions(grid, cell_positions[room_num], new_pos)
-            current_pos = cell_positions[room_num]
-            cell_positions[room_num] = new_pos
-            cell_positions[new_room_num] = current_pos
+    def calculate_manhattan_distance(pos1, pos2):
+        return abs(pos1[0] - pos2[0]) + abs(pos1[1] - pos2[1])
 
-    return grid, cell_positions
+    adj_dict = to_adj_dict(adjacency_requirements)
+
+    for room_pair in adjacency_requirements:
+        room_a, room_b = room_pair
+        pos_a = cell_positions[room_a]
+        pos_b = cell_positions[room_b]
+
+        # room_a와 다른 모든 방들과의 거리를 계산
+        distances = []
+        for other_room, other_pos in cell_positions.items():
+            if other_room != room_a:
+                distance = calculate_manhattan_distance(pos_a, other_pos)
+                distances.append((other_room, other_pos, distance))
+
+        # 거리 기준으로 정렬
+        distances.sort(key=lambda x: x[2])
+
+        # adj_list에 있는 방들과 비교하여 위치를 교환
+        for other_room, other_pos, distance in distances:
+            if other_room != room_b and distance < calculate_manhattan_distance(pos_a, pos_b):
+                # room_b와 더 가까운 방을 찾으면 위치를 교환
+                swap_positions(new_grid, pos_b, other_pos)
+                cell_positions[room_b] = other_pos
+                break
+
+    return new_grid, cell_positions
 
 
+def relocate_by_orientation_and_adjacency(grid, cell_positions, orientation_requirements, adjacency_requirements):
+    def find_extreme_positions(cell_positions):
+        # 각 방향에서 가장 극단적인 위치를 찾는 함수
+        norths = sorted(cell_positions, key=lambda x: x[0])  # 최북단
+        souths = sorted(cell_positions, key=lambda x: -x[0])  # 최남단
+        wests = sorted(cell_positions, key=lambda x: x[1])  # 최서단
+        easts = sorted(cell_positions, key=lambda x: -x[1])  # 최동단
+        return norths, souths, wests, easts
+
+    def remove_position_from_all_directions(pos, direction_to_list):
+        # 모든 방향 리스트에서 사용된 위치를 제거
+        for direction in direction_to_list.values():
+            if pos in direction:
+                direction.remove(pos)
+
+    def calculate_manhattan_distance(pos1, pos2):
+        return abs(pos1[0] - pos2[0]) + abs(pos1[1] - pos2[1])
+
+    norths, souths, wests, easts = find_extreme_positions(cell_positions)
+    direction_to_list = {
+        "north": norths,
+        "south": souths,
+        "east": easts,
+        "west": wests
+    }
+
+    new_grid = np.copy(grid)
+
+    # 1. 방향 요구사항 반영하여 방 배치
+    for key, direction in orientation_requirements.items():
+        extreme_positions = direction_to_list[direction]
+
+        while extreme_positions:
+            pos = extreme_positions.pop(0)  # 해당 방향의 가장 극단적인 위치 선택
+
+            if pos in cell_positions:  # 위치가 아직 사용되지 않았는지 확인
+                new_grid[pos] = key  # 해당 위치에 방 번호 설정
+                cell_positions.remove(pos)  # 사용한 위치를 제거
+                remove_position_from_all_directions(pos, direction_to_list)  # 모든 방향 리스트에서 위치 제거
+                break  # 방 배치가 완료되었으므로 루프 탈출
+            # 만약 pos가 이미 제거된 위치라면, 루프가 계속되어 다음 위치를 시도합니다.
+
+
+
+def to_adj_dict(adjacency_requirements):
+    # 결과 딕셔너리 초기화
+    adjacency_dict = {}
+
+    # adjacency_requirement 리스트를 순회하며 딕셔너리 생성
+    for pair in adjacency_requirements:
+        key = pair[0]
+        value = pair[1]
+        if key in adjacency_dict:
+            adjacency_dict[key].append(value)
+        else:
+            adjacency_dict[key] = [value]
+
+    return adjacency_dict
+
+# todo important: why not just assign random 8 position and later decide room_id
 def to_np_array(grid):
     m, n = len(grid), len(grid[0]) if grid else 0
     np_arr = np.full((m, n), -1, dtype=int)  # Initialize all cells as -1

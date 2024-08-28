@@ -1,5 +1,7 @@
 import numpy as np
 from constants import UNIT_SCALE,UNIT_MEASURE
+from collections import defaultdict,deque
+
 def real_boundary_Length(unit_boundary_length):
     return unit_boundary_length * UNIT_SCALE
 
@@ -55,6 +57,32 @@ def rooms_cells(grid):
     rooms = np.unique(grid)
     print(f'rooms={rooms}')
 
+
+# info: bread_first_search
+def bfs(r, c, floorplan):
+    rows, cols = floorplan.shape
+    adj_list = defaultdict(set)
+    visited = np.full(floorplan.shape, False)  # 방문한 셀을 추적
+    processed_rooms = set()  # 이미 인접 리스트가 만들어진 방 번호를 추적
+
+    queue = deque([(r, c)])
+    room = floorplan[r, c]
+    directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]  # 상, 하, 좌, 우
+
+    while queue:
+        x, y = queue.popleft()
+        visited[x, y] = True
+
+        for dx, dy in directions:
+            nx, ny = x + dx, y + dy
+            if 0 <= nx < rows and 0 <= ny < cols and not visited[nx, ny]:
+                if floorplan[nx, ny] == room:
+                    queue.append((nx, ny))
+                elif floorplan[nx, ny] != -1:
+                    adj_list[room].add(floorplan[nx, ny])
+                    adj_list[floorplan[nx, ny]].add(room)
+
+    return adj_list
 
 # # Sample grid (replace with your actual grid)
 # grid = [
