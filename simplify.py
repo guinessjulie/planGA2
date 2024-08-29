@@ -238,7 +238,7 @@ def exchange_protruding_cells(floorplan_origin, iteration=1, display=False, save
     cascading_cells = create_cascading_cells(floorplan)
     changed_cell_history={}
     if not np.any(cascading_cells == 1):
-        return
+        return floorplan_origin
 
     cascading_cells_list = list(map(tuple, np.argwhere(cascading_cells == 1)))
     i = 0
