@@ -45,7 +45,6 @@ class GridPolygon:
             # underway: examin RoomPolygon 좌표와 area
             corners = self.get_polygon_corners(room_number)
             room_polygons[room_number] = RoomPolygon(corners, room_number)
-            # room_polygons[room_number] = RoomPolygon(self.get_polygon_corners(room_number)) #info splited to two line above # todo to see how to get polygon corners
 
         return room_polygons
 
@@ -61,9 +60,8 @@ class GridPolygon:
         return outer_corners
 
     def add_horizontal_edge(self,corners, next_rotation, last):
-        next_rotation = 'vertical' if next_rotation == 'horizontal' else 'horizontal'
         horiz_start = last
-        # print(f'horiz_start = {horiz_start}')
+        # print(f'horiz_start = {horiz_start}') info no debug
         horiz_points = [c for c in corners if c[1] == horiz_start[1]]
         lefts = [c for c in horiz_points if c[0] < horiz_start[0]]
         rights = [c for c in horiz_points if c[0] > horiz_start[0]]
@@ -80,14 +78,12 @@ class GridPolygon:
             horiz_end = min(odd_set, key=lambda point: math.sqrt(
                 (point[0] - horiz_start[0]) ** 2 + (point[1] - horiz_start[1]) ** 2))
 
-        print(f'horiz_start, horiz_end = ({horiz_start}, {horiz_end})')
-        # outers.append((horiz_start, horiz_end))
-        # print(f'outers={outers}')
+        # print(f'horiz_start, horiz_end = ({horiz_start}, {horiz_end})') #info debug
+
         return (horiz_start, horiz_end)
 
     def add_vertical_edge(self,corners, next_rotation, last):
         # next_vertical
-        next_rotation = 'vertical' if next_rotation == 'horizontal' else 'horizontal'
         vert_start = last
 
         vert_points = [c for c in corners if c[0] == vert_start[0]]  # x 축이 같은  y,  세로로 직선을 그어 만나면 거기서 end
@@ -108,10 +104,8 @@ class GridPolygon:
             vert_end = min(odd_set, key=lambda point: math.sqrt(
                 (point[0] - vert_start[0]) ** 2 + (point[1] - vert_start[1]) ** 2))
 
-        print(f'vert_end={vert_end}')
-        # last = vert_end
-        # outers.append((vert_start,vert_end))
-        # print(f'outers = {outers}')
+        # print(f'vert_end={vert_end}') info no debug
+
         return (vert_start, vert_end)
 
     def get_polygon_corners(self, room_number):
@@ -128,13 +122,13 @@ class GridPolygon:
             points = self.add_horizontal_edge(corners, next_rotation, last)
             last = points[1]
             outers.append(points)
-            print(f'points={points},\tlast={last}')
-            print(f'outers={outers}')
+            # print(f'points={points},\tlast={last}') info nodebug
+            # print(f'outers={outers}') info nodebug
             points = self.add_vertical_edge(corners, next_rotation, last)
             last = points[1]
             outers.append(points)
-            print(f'points={points},\tlast={last}')
-            print(f'outers={outers}')
+            # print(f'points={points},\tlast={last}') info nodebug
+            # print(f'outers={outers}') info nodebug
         corners = [pair[0] for pair in outers]
         return corners
 
@@ -185,14 +179,8 @@ class GridPolygon:
         # corners.sort(key=lambda c: np.arctan2(c[1] - center[1], c[0] - center[0]))
         corners.sort(key=lambda c: np.arctan2(c[1] - top_left[1], c[0] - top_left[0]))
         # Print sorted corners for debugging
-        print(f"[sort_and_remove_collinear] sorted_corners = {corners}")
+        # print(f"[sort_and_remove_collinear] sorted_corners = {corners}") info nodebug
 
-        # filtered_corners = filter_collinear(corners) # 이미 filter되었음
-
-        # Print filtered corners for debugging
-        # print(f"[sort_and_remove_collinear] filtered_corners = {filtered_corners}")
-
-        # return filtered_corners
         return corners
 
 

@@ -29,7 +29,11 @@ class Fitness:
 
     @property # todo see proposal from GPT => saved in obsidian '논문-Fitness 계산' 참조
     def fitness(self):
-        total_fitness = 3 / (1 /self.adj_satisfaction + 1/self.size_satisfaction + 1/self.orientation_satisfaction)
+        epsilon = 1e-9
+        adj =  self.adj_satisfaction if self.adj_satisfaction !=0 else epsilon
+        size =  self.size_satisfaction if self.size_satisfaction !=0 else epsilon
+        ori =  self.orientation_satisfaction if self.orientation_satisfaction !=0 else epsilon
+        total_fitness = 3 / (1 /adj + 1/size + 1/ori)
         return total_fitness
 
     def calc_simplicity(self):

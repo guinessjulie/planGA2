@@ -356,8 +356,8 @@ class GridDrawer:
         scale = read_config_int('config.ini','Metrics',  'scale')
         wall_thickness = read_config_int('config.ini','Metrics','wall_thickness')
 
-        # Create a plot
-        fig, ax = plt.subplots()
+        # Create a plot with a specific figsize to maintain aspect ratio
+        fig, ax = plt.subplots(figsize=(grid.shape[1] / 2, grid.shape[0] / 2))
 
         # Get the unique room identifiers and their corresponding colors
         rooms = np.unique(grid)
@@ -418,6 +418,9 @@ class GridDrawer:
         # Adjust plot limits to account for wall thickness
         ax.set_xlim(-wall_thickness * 2, grid.shape[1] * scale + wall_thickness * 2)
         ax.set_ylim(-wall_thickness * 2, grid.shape[0] * scale + wall_thickness * 2)
+
+        # Set the aspect ratio to equal to maintain square cells
+        ax.set_aspect('equal')
 
         # Display the plot
         plt.gca().invert_yaxis()

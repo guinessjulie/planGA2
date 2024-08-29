@@ -45,7 +45,7 @@ class FloorplanApp:
         self.seed = None
         self.initial_cells = None
         self.fit = None
-        self.path = None
+        self.path = trivial_utils.create_folder_by_datetime()  # todo test
         self.option = None
         self.create_widgets()
 
@@ -164,6 +164,13 @@ class FloorplanApp:
 
 
     # todo place canvas parameter to all calling function
+    def draw_floorplan_with_metrics(self, floorplan, metric, canvas):
+        self.create_path()
+        display = self.options.display
+        save = self.options.save
+        if floorplan is not None:
+            fig = GridDrawer.draw_plan_with_metrics(floorplan, self.path, display=display, save=save, num_rooms=self.num_rooms,  metrics=metric)
+            self.show_plot_on_canvas(fig, canvas)
     def draw_floorplan(self, floorplan, canvas ):
 
         self.create_path()
@@ -284,7 +291,7 @@ class FloorplanApp:
     # underway: 1.  일단 running 하는지 확인
     def run_batch_from_same_seed(self):
         self.seed, self.room_seed_dict = locate_initial_cell(self.init_grid, self.num_rooms)
-        self.draw_floorplan(self.seed, self.initial_canvas)
+        # self.draw_floorplan(self.seed, self.initial_canvas) # info best floorplan 한 개만 출력해보자
         self.iteration = 0
         self.floorplans_dict = {} #info: structure {seed:floorplans} # floorplans = [(floorplan, fit)]
         self.run_iteration()
@@ -295,7 +302,7 @@ class FloorplanApp:
             self.ok_button.config(state = tk.DISABLED)
 
             initial_floorplan = create_floorplan(self.seed, k= self.num_rooms, options = self.options)
-            self.draw_floorplan(initial_floorplan, self.initial_canvas)
+            # self.draw_floorplan(initial_floorplan, self.initial_canvas)
             simplified_floorplan, fit = self.get_optimal_from_initial_floorplan(initial_floorplan)
             self.draw_floorplan(simplified_floorplan, self.final_canvas)
 
@@ -311,20 +318,28 @@ class FloorplanApp:
 
             # 1. 고유 식별자 생성
             unique_id = generate_unique_id(self.room_seed_dict)
+            fits = [fl[1] for fl in self.floorplans]
+            avg_fits  =  [fit.fitness for fit in fits]
+            best_fits_index = np.argmax(avg_fits)
+            max_fit_floorplan = self.floorplans[best_fits_index][0]
+            best_fit = self.floorplans[best_fits_index][1]
+            room_areas = [room.area for room in best_fit.room_polygons.values()]
 
             # 2. 고유 식별자를 사용해 결과 저장
             fitness_values = {
-            "Adjacency" :    np.average( [fl[1].adj_satisfaction for fl in self.floorplans]),
-            "Orientation" : np.average( [fl[1].orientation_satisfaction for fl in self.floorplans]),
-            "Size" : np.average([fl[1].size_satisfaction for fl in self.floorplans]),
-            "Regularity" : np.average( [fl[1].regularity for fl in self.floorplans]),
-            "Aspect Ratio": np.average([fl[1].pa_ratio for fl in self.floorplans]),
-            "Total Fitness": np.average([fl[1].fitness for fl in self.floorplans])
+            "Adjacency" :    np.average([ fit.adj_satisfaction for fit in fits]),
+            "Orientation" : np.average( [fit.orientation_satisfaction for fit in fits]),
+            "Size" : np.average([fit.size_satisfaction for fit in fits]),
+            "Regularity" : np.average( [fit.regularity for fit in fits]),
+            "Aspect Ratio": np.average([fit.pa_ratio for fit in fits]),
+            "Total Fitness": np.average([fit.fitness for fit in fits]),
+
 
             }
             fitness_result = "\n".join([f"{key}: {value:.2f}" for key, value in fitness_values.items()])
             self.fitness_label.config(text=f"For This Seed Average fitness Results:\n{fitness_result}")
-
+            self.draw_floorplan_with_metrics(max_fit_floorplan, room_areas, self.final_canvas) #info best floorplan 하나만 출력
+            self.draw_floorplan(self.seed,self.initial_canvas)
 
     def next_iteration(self):
         self.iteration += 1
@@ -362,8 +377,9 @@ class FloorplanApp:
         # info draw_plan_with_values > draw_plan
         full_path = trivial_utils.create_filename(self.path, 'Optimal_plan', '', '', 'png')
         room_areas = [room.area for room in fit.room_polygons.values()]
-        fig = GridDrawer.draw_plan_with_metrics(optimal_floorplan, full_path, display=False, save=False, num_rooms=self.num_rooms, metrics=room_areas)
-        self.show_plot_on_canvas(fig, self.final_canvas)
+        if self.options.display: # info display하는데 시간이 많이 걸린다. 이것도 새로운 옵션으로 뺍시다.
+            fig = GridDrawer.draw_plan_with_metrics(optimal_floorplan, full_path, display=False, save=False, num_rooms=self.num_rooms, metrics=room_areas)
+            self.show_plot_on_canvas(fig, self.final_canvas)
 
         fitness_values = self.create_fitness_info(fit)
         # 결과를 문자열로 포맷팅
