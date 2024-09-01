@@ -15,7 +15,7 @@ from GridPolygon import GridPolygon
 from options import Options
 from PolygonExporter import PolygonExporter
 from ga import GeneticAlgorithm
-from reqs import Req
+from floorplan import Floorplan
 from config_reader import load_config
 import configparser
 # Press Ctrl+F5 to execute it or replace it with your code.
@@ -30,24 +30,8 @@ class FloorplanApp:
     def __init__(self, root, init_grid, num_rooms, callback):
         self.root = root
         self.root.title("Floorplan UI")
-        self.room_polygons = None
-
-        self.init_grid = init_grid
-        self.num_rooms = num_rooms
-        self.reqs = Req()
         self.options = Options()
-        self.callback = callback  # Main App으로 floorplan을 반환하기 위한 콜백 함수
-        self.floorplan = None
-        self.floorplans = []
-        self.floorplans_dict = {} #info: structure {seed:floorplans} # floorplans = [(floorplan, fit)]
-        self.candidates = []
-        self.simplified_candidates = [] # todo check with self.candidates.  # info this comes from choose_best_simplified and save directly to floorplan
-        self.simplified_floorplan = None
-        self.seed = None
-        self.initial_cells = None
-        self.fit = None
-        self.path = trivial_utils.create_folder_by_datetime()  # todo test
-        self.option = None
+        self.floorplan = Floorplan(self.options.num_rooms)
         self.create_widgets()
 
 
@@ -80,15 +64,15 @@ class FloorplanApp:
             # ("Batch Processing", self.get_optimal_from_initial_floorplan), todo 이걸로 바꾸려고 했는데 왜 바꾸려고 했는지를 다시 알아내야 함
             ("Batch Processing", self.run_batch_from_seed),
             ("Evolve", self.evolve),
-            ('Create Floorplan', self.initialize_floorplan),
-            ("Simplify Floorplan", self.exchange_cells),
-            ("Choose Most Simplified", self.choose_simplified),
-            ("Build Polygon", self.build_polygon),
-            ("Draw Floorplan", self.draw_floorplan_menu),
-            ("Fitness", self.get_fitness),
-            ("Draw Plan Equal Thickness", self.draw_floorplan_menu),
-            ("Draw Plan with Value", self.draw_plan_with_values),
-            ("Return Floorplan", self.return_floorplan),
+            # ('Create Floorplan', self.initialize_floorplan),
+            # ("Simplify Floorplan", self.exchange_cells),
+            # ("Choose Most Simplified", self.choose_simplified),
+            # ("Build Polygon", self.build_polygon),
+            # ("Draw Floorplan", self.draw_floorplan_menu),
+            # ("Fitness", self.get_fitness),
+            # ("Draw Plan Equal Thickness", self.draw_floorplan_menu),
+            # ("Draw Plan with Value", self.draw_plan_with_values),
+            # ("Return Floorplan", self.return_floorplan),
             ("Exit", self.root.quit),
         ]
 
@@ -144,16 +128,44 @@ class FloorplanApp:
             messagebox.showwarning("Warning", "Create the floorplan first")
 
     def initialize_room_location(self):
-        if self.init_grid is not None:
-            self.seed, self.initial_cells = locate_initial_cell(self.init_grid, self.num_rooms)
+
+        self.seed = self.floorplan.locate_initial_cell(self.options.num_rooms)
+        if self.seed is not None:
             self.draw_on_canvas(self.seed, self.initial_canvas)
         else:
             messagebox.showwarning('Error', 'init_grid is not given')
 
+    # todo 1. create_floorplan =>
+    #  2. simplified until no cascading exists. or max 5 times with same_cascading number => Done
+    #  3. compare with fitness values. withdraw if one is same as others save into self.floorplans
+    #  4. repeate create_floorplan => simplified_floorplan -> self.floorplans
+    #  5. batch fitnesses for all floorplans of one seed
+    #  6. keep track of finnesses of the seed
+
+    # underway: 1.  일단 running 하는지 확인
+    def run_batch_from_seed(self):
+        self.initialize_room_location()
+        num_iter = self.options.iteration_from_seed
+        # underway: move this logic to Floorplan Class
+        if self.options.silence_mode: # todo App에서 options를 가지고 있어야 하냐 한다. 여기서 가지고 Floorplan에 넘겨주자
+            self.run_iteration_silence()
+        else:
+            self.run_iteration()
+
+    def run_iteration_silence(self): # underway ok button이 있기 때문에 이 작업은 여기서해야 한다ㅣ 내부 작업만 Foorplan class로 Move
+
+        floorplans, average_text_result, best_fit_result, best_fit_floorplan, room_areas  = self.floorplan.iterate_for_optimal_floorplans(self.options.iteration_from_seed) # 여기서 10번 함
+        self.fitness_label.config(text=average_text_result)
+        self.best_fitness_label.config(text = best_fit_result)
+        self.ok_button.config(state=tk.DISABLED)
+        self.draw_on_canvas_metrics(best_fit_floorplan, room_areas,  self.final_canvas) # info best floorplan 하나만 출력
+
+
+
     def initialize_floorplan(self):
         self.simplified_candidates.clear()
         if self.seed is not None:
-            self.floorplan = create_floorplan(self.seed, k = self.num_rooms, options= self.options, reqs = self.reqs) # todo to change plan.create_floorplan
+            floorplan = create_floorplan(self.seed, k = self.num_rooms, options= self.options, reqs = self.reqs) # todo to change plan.create_floorplan
             if self.floorplan is not None:
                 self.draw_on_canvas(self.floorplan, self.final_canvas)
             else:
@@ -165,27 +177,15 @@ class FloorplanApp:
         self.path = trivial_utils.create_folder_by_datetime()  # todo test
         self.full_path = trivial_utils.create_filename(self.path, 'Plan', '', '', 'png')
 
-    def draw_floorplan_menu(self):
-        self.create_path()
-        if self.simplified_floorplan is not None:
-            fig = GridDrawer.color_cells_by_value(self.simplified_floorplan, self.full_path, display=True, save=False, num_rooms=self.num_rooms)
-            self.show_plot_on_canvas(fig,self.initial_canvas)
-        elif self.floorplan is not None:
-            fig = GridDrawer.color_cells_by_value(self.floorplan, self.full_path, display=True, save=False, num_rooms=self.num_rooms)
-            self.show_plot_on_canvas(fig,self.initial_canvas)
-        else: messagebox.showwarning('Error', 'Create Floorplan First')
-
-
-    # todo place canvas parameter to all calling function
-
     def draw_on_canvas_metrics(self, floorplan, metrics, canvas):
         self.create_path()
         display = self.options.display
         save = self.options.save
+        num_rooms = self.options.num_rooms
         if floorplan is not None:
-            fig = GridDrawer.draw_plan_with_metrics(floorplan, self.full_path, display=self.options.display,
-                                                    save=self.options.save,
-                                                    num_rooms=self.num_rooms, metrics=metrics)
+            fig = GridDrawer.draw_plan_with_metrics(floorplan, self.full_path, display=display,
+                                                    save=save,
+                                                    num_rooms=num_rooms, metrics=metrics)
             self.show_plot_on_canvas(fig, canvas)
         else:
             messagebox.showwarning("Warning", "Create Floorplan First")
@@ -194,38 +194,11 @@ class FloorplanApp:
 
         self.create_path()
         if floorplan is not None:
-            fig = GridDrawer.color_cells_by_value(floorplan, self.full_path, display=False, save=True, num_rooms = self.num_rooms)
+            fig = GridDrawer.color_cells_by_value(floorplan, self.full_path, display=False, save=True, num_rooms = self.options.num_rooms)
             self.show_plot_on_canvas(fig, canvas)
         else:
             messagebox.showwarning("Warning", "Create Floorplan First")
 
-    def draw_plan_with_values(self):
-
-        if self.path is None:
-            self.create_path()
-        # todo: 이렇게 하면 꼬인다. simlified_floorplan을 표시하느냐 floorplan을 표시하느냐 이걸 결정해서 로직을 바꾸자.
-        if self.simplified_floorplan is not None:
-            floorplan = self.simplified_floorplan
-        elif self.floorplan is not None:
-            floorplan = self.floorplan
-        else:
-            messagebox.showwarning("Warning", "Load floorplan first")
-            return
-
-        self.draw_plan(floorplan, self.final_canvas)
-
-    def draw_plan(self, floorplan, canvas):
-
-        full_path = trivial_utils.create_filename(self.path, 'Floorplan', '', '', 'png')
-        fig = GridDrawer.draw_plan_with_metrics(floorplan, full_path, display=False, save=False, num_rooms=self.num_rooms, metrics=self.fit.room_areas)
-        self.show_plot_on_canvas(fig, canvas)
-
-    def draw_padded(self):
-        if self.floorplan:
-            GridDrawer.draw_plan_padded(self.floorplan)
-            messagebox.showinfo("Info", "Plan drawn with padding")
-        else:
-            messagebox.showwarning("Warning", "Load floorplan first")
     # underway rectangularity 확인
     def exchange_cells(self):
         if self.floorplan is not None:
@@ -235,54 +208,8 @@ class FloorplanApp:
         else:
             messagebox.showwarning("Warning", "Load floorplan first")
 
-    def choose_simplified(self):
-        min_cas_len = np.sum(self.floorplan >= 1) # max_cascading_cell_length
-        min_cas_list = []
-        min_idx = 0
-        for idx, fl in enumerate(self.simplified_candidates):
-            cas_length, cas_list = count_cascading_cells(fl) # todo cascading_cell의 갯수가 가장 적은 floorplan을 구하자. 이 부분은 exchange_proturding_cells를 여러번 한 후 가장 optimum한 것을 고를 때 필요함
-            if cas_length < min_cas_len:
-                min_cas_len = cas_length
-                min_idx = idx
-                max_cas_list = cas_list
-        self.floorplan = self.simplified_candidates[min_idx]
 
 
-    def create_fitness_info(self, fit):
-        fitness_values = {
-            "Adjacency Satisfaction": fit.adj_satisfaction,
-            "Orientation Satisfaction":fit.orientation_satisfaction,
-            "Size Satisfaction": fit.size_satisfaction,
-            "Rectangularity": fit.rectangularity, # todo property 이기 때문에 method를 반납함. 따라서 Fitness에서 rectangularity를 직접 가지고 있어야 함
-            "Room Shape Simplicity": fit.simplicity,
-            "Room Regularity": fit.regularity,
-            "Squareness Measure": fit.pa_ratio,
-            "Fitness": fit.fitness
-        }
-
-        fitness_result = "\n".join([f"{key}: {value:.2f}" for key, value in fitness_values.items()])
-
-        return fitness_result
-
-
-    # todo 현재는 일일히 단추를 눌러서 하나씩 하지만 모든 걸 한꺼번에 할 수 있어야 한다.
-    def get_fitness(self):
-        # 피트니스 값 계산 로직 (예시)
-        if self.floorplan is None:
-            messagebox('Warning', 'Floorplan not created')
-            return
-        if self.room_polygons is None:
-            messagebox.showwarning('Warning', 'Build Polygon First')
-            return
-
-        self.fit = Fitness(self.floorplan, self.num_rooms, self.room_polygons, self.reqs) # todo to change Fitness
-        fitness_result = self.create_fitness_info(self.fit)
-
-        # 결과를 문자열로 포맷팅
-        # fitness_result = "\n".join([f"{key}: {value:.2f}" for key, value in fitness_values.items()])
-
-        # 레이블에 피트니스 결과 표시
-        self.fitness_label.config(text=f"Fitness Results:\n{fitness_result}")
 
     def build_polygon(self):
         if self.floorplan is not None:
@@ -298,97 +225,17 @@ class FloorplanApp:
         else:
             messagebox.showwarning("Warning", "Load floorplan first")
 
-    def categorize_cells(self):
-        if self.floorplan is not None:
-            horiz, vert = categorize_boundary_cells(self.floorplan, 1)
-            messagebox.showinfo("Info", f"Boundary cells categorized: h = {horiz}, v = {vert}")
-        else:
-            messagebox.showwarning("Warning", "Load floorplan first")
-    # todo 1. create_floorplan =>
-    #  2. simplified until no cascading exists. or max 5 times with same_cascading number => Done
-    #  3. compare with fitness values. withdraw if one is same as others save into self.floorplans
-    #  4. repeate create_floorplan => simplified_floorplan -> self.floorplans
-    #  5. batch fitnesses for all floorplans of one seed
-    #  6. keep track of finnesses of the seed
-
-    # underway: 1.  일단 running 하는지 확인
-    def run_batch_from_seed(self):
-        self.seed, self.room_seed_dict = locate_initial_cell(self.init_grid, self.num_rooms) # seed 를 만들었어
-        self.draw_on_canvas(self.seed, self.initial_canvas)
-        # self.draw_floorplan(self.seed, self.initial_canvas) # info best floorplan 한 개만 출력해보자
-        self.iteration = 0
-        if self.options.silence_mode:
-            floorplans = self.run_iteration_silence() # info 10번의 iteration을 하면 self.floorplans에 10개가 쌓여
-            # 1. 고유 식별자 생성
-            unique_id = generate_unique_id(self.room_seed_dict)
-            self.floorplans_dict[unique_id] = floorplans
-        else:
-            self.run_iteration()
-
     # todo 이것은 하나씩 확인하고자 할 때 쓰인다. 대량의 population을 일으키려면 while이나 for를 이용하여 반복해야 한다.
     #  최종적으로는 population을 일으킬 때 UI 없이 해야 할 것이다.
     #  일단 option에다가 silence 모드를 넣고 이 모듈을 복사해서 silence 하게 해보자.
 
-    def generate_average_fitness_text(self,fits):
-        # 2. 고유 식별자를 사용해 결과 저장
-        fitness_values = {
-            "Adjacency": np.average([fit.adj_satisfaction for fit in fits]),
-            "Orientation": np.average([fit.orientation_satisfaction for fit in fits]),
-            "Size": np.average([fit.size_satisfaction for fit in fits]),
-            "Regularity": np.average([fit.regularity for fit in fits]),
-            "Aspect Ratio": np.average([fit.pa_ratio for fit in fits]),
-            "Total Fitness": np.average([fit.fitness for fit in fits]),
-        }
-        text_result = "\n".join([f"{key}: {value:.2f}" for key, value in fitness_values.items()])
-        return text_result
 
 
     def evolve(self):
         # GeneticAlgorithm에 population 전달
         ga = GeneticAlgorithm(list(self.floorplans_dict.values()))
         ga.run(num_generations=50, population_size=10, mutation_rate=0.01)
-    def run_iteration_silence(self):
-        floorplans = []
-        for i in range(10):
-            self.ok_button.config(state = tk.DISABLED)
 
-            initial_floorplan = create_floorplan(self.seed, k= self.num_rooms, options = self.options, reqs = self.reqs)
-            # self.draw_floorplan(initial_floorplan, self.initial_canvas) info to see original floorplan
-            simplified_floorplan, fit = self.get_optimal_from_initial_floorplan(initial_floorplan)
-            # self.draw_on_canvas(simplified_floorplan, self.final_canvas) # info scilence mode에서는 필요없다.
-            room_areas = [room.area for room in fit.room_polygons.values()]
-            # self.draw_on_canvas_metrics(simplified_floorplan, room_areas, self.final_canvas) #  info silence 모드에서는 필요없다.
-            #결과 저장
-            floorplans.append( (simplified_floorplan, fit))
-
-            # OK 버튼 활성화
-            # self.ok_button.config(state=tk.NORMAL) # info siilence 모드에서는 필요없다.
-
-
-        self.fitness_label.config(text="Batch processing complete.")
-        self.ok_button.config(state=tk.DISABLED)
-
-
-        # average_fitness_label on label
-        fits = [fl[1] for fl in floorplans] # 모든 fitness들을 가져와서
-        average_text_result = self.generate_average_fitness_text(fits)
-        average_text_result = f'Average Fitness Result \n {average_text_result}'
-        self.fitness_label.config(text=average_text_result)
-
-
-        # best_fitness_label on best_fitness_label
-        avg_fits  =  [fit.fitness for fit in fits]
-        best_fits_index = np.argmax(avg_fits)
-        best_fit = floorplans[best_fits_index][1]
-        best_fit_floorplan = floorplans[best_fits_index][0]
-        best_fit_result = f'Best Fitness Result\n' + self.create_fitness_info(best_fit)
-        self.best_fitness_label.config(text=best_fit_result)
-
-        room_areas = [room.area for room in best_fit.room_polygons.values()]
-
-        self.draw_on_canvas_metrics(best_fit_floorplan, room_areas,  self.final_canvas) # info best floorplan 하나만 출력
-        return floorplans # todo 일단 10 개의 floorplans가 return, best_fit을 가진 floorplan을 return 하게 될 수도 있다. 먼저 작동 확인하자.
-        # self.draw_on_canvas(self.seed, self.initial_canvas)
 
 
     def run_iteration(self):
@@ -517,38 +364,7 @@ class FloorplanApp:
         else:
             return None
 
-    def create_candidate_floorplans(self, initial_floorplan):
-        min_cas = np.sum(initial_floorplan >= 1)  # cascading_cell의 최대 갯수
-        num_cas = min_cas
-        candidates = []
-        iteration_count = 0
-        max_iterations = 5
 
-        num_cas_dict = {}
-        while num_cas != 0 and iteration_count < max_iterations:
-            candidate = exchange_protruding_cells(initial_floorplan, 10)  # todo check iteration count in exchange_...
-            candidate_cas, _ = count_cascading_cells(candidate)
-            # print(f'num_cascading_cell = {candidate_cas}')
-
-            if candidate_cas < min_cas:  #
-                candidates.append(candidate)
-                min_cas = candidate_cas
-                num_cas_dict[len(candidates) -1] = candidate_cas
-            iteration_count += 1
-
-        candidates = self.remove_duplicate_floorplan(candidates)
-
-        # 가장 작은 num_cas 값을 가진 모든 candidate를 선택
-        min_candidates = [candidates[idx] for idx, cas in num_cas_dict.items() if cas == min_cas]
-        print(f'candidate size = {len(min_candidates)}')
-        return min_candidates if min_candidates else [initial_floorplan]
-
-    def remove_duplicate_floorplan(self,candidates):
-        unique_candidates = []
-        for fl in candidates:
-            if not any(np.array_equal(fl, unique) for unique in unique_candidates):
-                unique_candidates.append(fl)
-        return unique_candidates
 
 
 

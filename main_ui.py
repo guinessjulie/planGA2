@@ -49,7 +49,7 @@ from plan_utils import grid_to_coordinates, expand_grid
 from config_reader import read_constraint, read_config_boolean, read_config_int
 from trivial_utils import create_filename_with_datetime
 import numpy as np
-from Floorplan import FloorplanApp  # 여기서 FloorplanApp을 임포트
+from floorplan_app import FloorplanApp  # 여기서 FloorplanApp을 임포트
 
 
 class MainApp:

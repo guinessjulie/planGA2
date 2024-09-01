@@ -8,3 +8,4 @@ class Options:
         self.min_size_alloc  = config.getboolean('RunningOption', 'min_size_optimized_allocation', fallback = True)
         self.silence_mode = config.getboolean('RunningOption', 'silence_mode', fallback=True)
         self.num_rooms = config.getint('Metrics','num_rooms')
+        self.iteration_from_seed = config.getint('RunningOptions', 'iteration_from_seed')

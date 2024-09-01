@@ -125,7 +125,8 @@ def locate_initial_cell(empty_grid, k):
     return initialized_grid, initial_cells
 
 def display_process(initialized_grid, k,options, prefix):
-
+    if options is None:
+        options = Options()
     # initialized_grid, initial_cells = place_k_rooms_on_grid(to_np_array(empty_grid), k) # todo place_seed에서 그래프 만족시키는 seed 새로 만듦
     path = trivial_utils.create_folder_by_datetime()
     full_path = trivial_utils.create_filename(path, prefix, '', '', 'png')
@@ -359,6 +360,7 @@ def create_floorplan(initialized_grid, k, options, reqs = None):
         floorplan = allocate_rooms(grid_copy, display =  options.display, save=options.save, num_rooms=k)
 
     return floorplan
+
 
 def allocate_room_with_size(floorplan, display=False, save=True, num_rooms=8, reqs = None):
     def choose_new_adjacent_cell(floorplan, cell):
