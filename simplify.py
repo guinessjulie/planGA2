@@ -67,6 +67,7 @@ def count_cascading_cells(floorplan):
 
     return cascading_cells_count, cascading_cells_list
 
+
 def all_active_neighbors(cell, floorplan):
     directions8 = [(-1, 0), (1, 0), (0, -1), (0, 1),  # 상하좌우
                    (-1, -1), (-1, 1), (1, -1), (1, 1)]  # 대각선

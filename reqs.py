@@ -1,5 +1,5 @@
 import configparser
-from config_reader import read_ken_int_constraints_from, read_str_constraints_from
+from config_reader import read_key_int_constraints_from, read_str_constraints_from
 import ast
 class Req:
     def __init__(self, config_file = 'constraints.ini'):
@@ -8,6 +8,8 @@ class Req:
         self.size_req = self._parse_size_req()
         self.adj_list = self.get_adj_req()
         self.orientation = self.load_orientation_req()
+        self.fitness_weight = self.load_weight_req()
+        print(self.fitness_weight)
     def _parse_size_req(self):
         size_req = {}
         for room_id in self.config['SizeRequirements']:
@@ -24,7 +26,11 @@ class Req:
 
     def load_orientation_req(self):
         section = 'OrientationRequirements'
-        return read_ken_int_constraints_from(self.config, section)
+        return read_key_int_constraints_from(self.config, section)
+
+    def load_weight_req(self):
+        section = 'FitnessWeight'
+        return read_str_constraints_from(self.config, section)
 
 
 

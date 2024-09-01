@@ -16,6 +16,7 @@ from cells_utils import  is_valid_cell, is_inside
 from plan_utils import dict_value_to_coordinates
 from options import Options
 from reqs import Req
+
 # todo 1: 사이즈 작은 사이즈일 수록 빈 인접셀 적다. 이를 이용해서 초기화에 활용
 # todo 2: 인접 리스트를 만들어서 해당 조건 만족하도록
 # todo 6: Graph의 구조가 같은지를 체크할 수 있도록 GraphGrid에 equality function들을 만들었다. 이를 활용해서 인접성 리스트를 optimize 하자
@@ -23,6 +24,82 @@ from reqs import Req
 # todo 4: 분리
 # info : adj_requirements를 추가했으나 성과가 없다. graph를 비교해서 방을 바꾸는 방법으로 가는 것도 방법
 # todo 0828: 일단 seed를 출력하고 fitness를 보자
+
+
+
+def find_parallel_adjacent_cells(floorplan, room_id):
+    """
+    주어진 방 번호에 대해 수평 또는 수직 방향으로 일직선상에 있는 셀들의 좌표를 찾고,
+    이 셀들이 다른 방과 인접해 있는지 확인하여 결과를 반환한다.
+
+    Parameters:
+    - floorplan: 2D numpy array, 플로어플랜의 배열 (각 셀은 방 번호를 가짐)
+    - room_id: int, 찾고자 하는 방의 번호
+
+    Returns:
+    - result: list of tuples, 각 튜플은 (셀 좌표 리스트, 방향)으로 구성
+    """
+    result = []
+    rows, cols = floorplan.shape
+
+    # 수평 방향으로 일직선상에 있는 셀들 확인
+    for i in range(rows):
+        row_coords = [(i, j) for j in range(cols) if floorplan[i, j] == room_id]  # 수평 방향으로 일직선상에 있는 셀들
+        if len(row_coords) >= 2:
+            # 이 셀들이 상하 방향으로 다른 방과 인접해 있는지 확인
+            for x, y in row_coords:
+                if x > 0 and floorplan[x - 1, y] != room_id and floorplan[x - 1, y] != 0:
+                    result.append((row_coords, 'up'))
+                    break  # 중복 추가 방지
+                if x < rows - 1 and floorplan[x + 1, y] != room_id and floorplan[x + 1, y] != 0:
+                    result.append((row_coords, 'down'))
+                    break  # 중복 추가 방지
+
+    # 수직 방향으로 일직선상에 있는 셀들 확인
+    for j in range(cols):
+        col_coords = [(i, j) for i in range(rows) if floorplan[i, j] == room_id]  # 수직 방향으로 일직선상에 있는 셀들
+        if len(col_coords) >= 2:
+            # 이 셀들이 좌우 방향으로 다른 방과 인접해 있는지 확인
+            for x, y in col_coords:
+                if y > 0 and floorplan[x, y - 1] != room_id and floorplan[x, y - 1] != 0:
+                    result.append((col_coords, 'left'))
+                    break  # 중복 추가 방지
+                if y < cols - 1 and floorplan[x, y + 1] != room_id and floorplan[x, y + 1] != 0:
+                    result.append((col_coords, 'right'))
+                    break  # 중복 추가 방지
+
+    return result
+
+
+def assign_cells_to_adjacent_room(floorplan, room_id):
+    """
+    주어진 방의 셀들을 인접한 다른 방의 번호로 할당한다.
+    이때, 인접한 다른 방이 있는 방향 중 한 방향만 임의로 선택하여 할당한다.
+
+    Parameters:
+    - floorplan: 2D numpy array, 플로어플랜의 배열 (각 셀은 방 번호를 가짐)
+    - room_id: int, 할당할 셀들의 방 번호
+
+    Returns:
+    - modified_floorplan: 할당된 후의 플로어플랜 배열
+    """
+    adjacent_cells = find_parallel_adjacent_cells(floorplan, room_id)
+
+    if adjacent_cells:
+        # 인접 방향 중 하나를 임의로 선택
+        cells, direction = random.choice(adjacent_cells)
+
+        for (x, y) in cells:
+            if direction == 'up' and x > 0 and floorplan[x - 1, y] != 0:
+                floorplan[x, y] = floorplan[x - 1, y]
+            elif direction == 'down' and x < floorplan.shape[0] - 1 and floorplan[x + 1, y] != 0:
+                floorplan[x, y] = floorplan[x + 1, y]
+            elif direction == 'left' and y > 0 and floorplan[x, y - 1] != 0:
+                floorplan[x, y] = floorplan[x, y - 1]
+            elif direction == 'right' and y < floorplan.shape[1] - 1 and floorplan[x, y + 1] != 0:
+                floorplan[x, y] = floorplan[x, y + 1]
+
+    return floorplan
 
 
 def create_req_graph(adjacency_list):
@@ -270,18 +347,20 @@ def assign_rooms_by_orientation(grid, cell_positions, orientation_requirements):
 
     return new_grid, cell_positions
 
-def create_floorplan(initialized_grid, k, options):
+def create_floorplan(initialized_grid, k, options, reqs = None):
+    if reqs is None:
+        reqs = Req()
     grid_copy = initialized_grid.copy()
     display_process(grid_copy, k=k, options=options, prefix = 'Init0') #info just save and display on pycharm
 
     if options.min_size_alloc:
-        floorplan = allocate_room_with_size(grid_copy, options.display, save=options.save, num_rooms=k)
+        floorplan = allocate_room_with_size(grid_copy, options.display, save=options.save, num_rooms=k, reqs = reqs)
     else :
         floorplan = allocate_rooms(grid_copy, display =  options.display, save=options.save, num_rooms=k)
 
     return floorplan
 
-def allocate_room_with_size(floorplan, display=False, save=True, num_rooms=8):
+def allocate_room_with_size(floorplan, display=False, save=True, num_rooms=8, reqs = None):
     def choose_new_adjacent_cell(floorplan, cell):
         row, col = cell
         rows, cols = floorplan.shape
@@ -320,7 +399,7 @@ def allocate_room_with_size(floorplan, display=False, save=True, num_rooms=8):
     num_iter = 0
     while active_cells and expandable_rooms:
         num_iter += 1
-        print(f'iter={num_iter} Active cells length: {len(active_cells)}')
+        # print(f'iter={num_iter} Active cells length: {len(active_cells)}') info to debug to avoid infinite loop
         room_to_coordinates = dict_value_to_coordinates(floorplan)
         room_numbers = [room for room in expandable_rooms if room not in max_area_exceeded]
 
@@ -339,8 +418,9 @@ def allocate_room_with_size(floorplan, display=False, save=True, num_rooms=8):
         cell = random.choice(current_active_cells)
 
         # 현재 방의 면적이 최대 면적을 초과했는지 확인
-        req = Req()
-        min_area, max_area = req.get_area_range(room)
+        if reqs is None:
+            reqs = Req()
+        min_area, max_area = reqs.get_area_range(room)
         if max_area is not None and room_areas[room] >= max_area:
             max_area_exceeded.add(room)  # 방을 더 이상 확장하지 않도록 집합에 추가
             expandable_rooms.remove(room)  # 이 방은 더 이상 확장할 수 없으므로 expandable_rooms에서 제거
@@ -366,11 +446,22 @@ def allocate_room_with_size(floorplan, display=False, save=True, num_rooms=8):
             room_areas[room] += 1  # 셀이 추가되었으므로 면적 증가
             update_active_cells(floorplan, c, active_cells)
 
-        filename, current_step = trivial_utils.create_filename_in_order('png', 'Step', current_step)
-        GridDrawer.color_cells_by_value(floorplan, filename, display=display, save=save, num_rooms=num_rooms)
+        # filename, current_step = trivial_utils.create_filename_in_order('png', 'Step', current_step) # info to see process take comment off
+        # GridDrawer.color_cells_by_value(floorplan, filename, display=display, save=save, num_rooms=num_rooms) # info to see process take comment off
 
-    filename, current_step = trivial_utils.create_filename_in_order('png', 'Reform', current_step)
-    GridDrawer.color_cells_by_value(floorplan, filename, display=display, save=save, num_rooms=num_rooms)
+    # 빈 셀 채우기: 할당되지 않은 셀에 인접한 셀의 방 번호를 할당
+    rows, cols = floorplan.shape
+    for i in range(rows):
+        for j in range(cols):
+            if floorplan[i, j] == 0:  # 할당되지 않은 셀 찾기
+                adjacent_rooms = [floorplan[i + di, j + dj] for di, dj in [(-1, 0), (1, 0), (0, -1), (0, 1)]
+                                  if is_inside(floorplan, (i + di, j + dj)) and floorplan[i + di, j + dj] > 0]
+                if adjacent_rooms:
+                    floorplan[i, j] = random.choice(adjacent_rooms)  # 인접한 셀 중 임의의 방 번호로 할당
+
+
+    # filename, current_step = trivial_utils.create_filename_in_order('png', 'Reform', current_step) # info to see process take comment off
+    # GridDrawer.color_cells_by_value(floorplan, filename, display=display, save=save, num_rooms=num_rooms)# info to see process take comment off
     return floorplan
 
 
@@ -522,7 +613,7 @@ def get_unique_values(floorplan, cells):
     return unique_values
 
 # todo active_cells를 복사하지 않고 바로 이용
-def allocate_rooms(floorplan, display=False, save=True, num_rooms=7):
+def allocate_rooms(floorplan, display=False, save=True, num_rooms=8):
 
     # todo 여기서는 그냥 choose만 하고, return 값은 새 셀의 좌표와 방향
     def choose_new_adjacent_cell(floorplan, cell):
@@ -1355,7 +1446,8 @@ def exe_build_floorplan():
         [1, 1, 1, 1, 1],
         [1, 1, 1, 1, 1]
     ]
-    grid = create_floorplan(m, n, k, floorshape)
+    reqs = Req()
+    grid = create_floorplan(m, n, k, floorshape,reqs)
     color_grid = plan_utils.get_color_coordinates(grid)
     savepath = 'output.png'
     GridDrawer.draw_grid_reversed(color_grid, savepath)
@@ -1374,5 +1466,5 @@ def main():
     exe_build_floorplan()
 
 
-if __name__ == '__main__':
-    main()
+# if __name__ == '__main__':
+    # main()

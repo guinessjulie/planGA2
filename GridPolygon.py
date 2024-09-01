@@ -113,7 +113,7 @@ class GridPolygon:
         next_rotation = 'vertical'
 
         topy = min(corners, key=lambda coord: coord[1])[1]  # top
-        print(topy)
+        # print(topy)
         top_left = min([c for c in corners if c[1] == topy])
         last = top_left
 

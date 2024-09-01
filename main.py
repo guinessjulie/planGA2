@@ -14,7 +14,7 @@ from PolygonExporter import PolygonExporter
 from measure import categorize_boundary_cells
 from plan import create_floorplan
 from simplify import exchange_protruding_cells
-
+from reqs import Req
 from trivial_utils import create_filename_with_datetime
 import constants
 import numpy as np
@@ -39,7 +39,8 @@ def run_selected_module(modules, param1, param2=None):
 def run_build_floorplan():
     floor_grid = constants.floor_grid
     m,n,k = len(floor_grid), len(floor_grid[0]),constants.NUM_SPACE
-    floorshape = create_floorplan(m,n,k,floor_grid)
+    reqs = Req()
+    floorshape = create_floorplan(m,n,k,floor_grid,reqs=reqs)
     return floorshape
 
 def exit_module(param1= None, param2=None):

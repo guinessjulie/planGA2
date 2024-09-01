@@ -32,7 +32,7 @@ def read_str_constraints_from(config, section): # info read from configparser ob
             constraints[key] = value
     return constraints
 
-def read_ken_int_constraints_from(config, section): # info read key as int
+def read_key_int_constraints_from(config, section): # info read key as int
     constraints = {}
     if section in config:
         for key, value in config.items(section):

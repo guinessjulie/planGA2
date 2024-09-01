@@ -6,19 +6,16 @@ from reqs import Req
 # todo test room_polygons: shape requirement fitness function examine and ensure to make sensible
 # todo fitness에서 self.room_polygon[room_id].area/perimeter/simplicity etc 접근 가능
 # underway fit.area etc와 polygon의 metrics를 비교
+# todo strategy for create_population
+#   1. 좋은 seed를 구한다. run_iteration 반복에서 각 seed별 평균, 최대, 세가지 목표를 반영한 파레토를 구해서 기준에 어긋나면 버린다.
+#   2.계속해서  floorplans를  생성한다.
 
 class Fitness:
-    def __init__(self, floorplan, num_rooms, room_polygons):
+    def __init__(self, floorplan, num_rooms, room_polygons, reqs):
         self.floorplan = floorplan
         self.num_rooms = num_rooms
-        self.room_polygons = room_polygons # underway room_polygon instance는 corners, area, perimeter, min_Length, simplicity를 가지고 있다.
-
-        # self.num_cells = {} # underway 0823 필요없음
-        # self.boundary_lengths = {}
-        # self.room_areas = {} # info 1. cell을 count해서 구한 area와 RoomPolygon 인스턴스에서 가져온  area는 구하는 방법은 다르지만 결과는 같다. 2.todo 하지만 RoomPolygon에서 Edge를 이동할 것이기 때문에 여기서 구한 area를 지우고 RoomPolygon에서 구한 area를 쓰는 게 좋겠다. 일단 두자.
-        # self.pa_ratios = {} #underway: get rid of grid metrics
-        self.reqs = Req()
-        # self.measure_room_metrics() # todo create_cell_adjacency_list 를 이 함수 속에 넣고 self.cell_adjacencies는
+        self.room_polygons = room_polygons # room_polygon instance는 corners, area, perimeter, min_Length, simplicity를 가지고 있다.
+        self.reqs = reqs
         self.adj_satisfaction = self.calc_adj_satisfaction()
         self.size_satisfaction = self.calc_size_satisfaction()
         self.simplicity = self.calc_simplicity()
@@ -30,10 +27,11 @@ class Fitness:
     @property # todo see proposal from GPT => saved in obsidian '논문-Fitness 계산' 참조
     def fitness(self):
         epsilon = 1e-9
+        adj_weight, ori_weight, size_weight = int(self.reqs.fitness_weight['adjacency']), int(self.reqs.fitness_weight['orientation']), int(self.reqs.fitness_weight['size'])
         adj =  self.adj_satisfaction if self.adj_satisfaction !=0 else epsilon
         size =  self.size_satisfaction if self.size_satisfaction !=0 else epsilon
         ori =  self.orientation_satisfaction if self.orientation_satisfaction !=0 else epsilon
-        total_fitness = 3 / (1 /adj + 1/size + 1/ori)
+        total_fitness =( adj_weight + ori_weight + size_weight )/ ((adj_weight /adj) + (ori_weight/size) + (size_weight/ori))
         return total_fitness
 
     def calc_simplicity(self):

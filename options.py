@@ -6,3 +6,5 @@ class Options:
         self.display = config.getboolean('RunningOptions', 'display_place_room_process', fallback=False)
         self.save = config.getboolean('RunningOptions', 'save_place_room_process', fallback=False)
         self.min_size_alloc  = config.getboolean('RunningOption', 'min_size_optimized_allocation', fallback = True)
+        self.silence_mode = config.getboolean('RunningOption', 'silence_mode', fallback=True)
+        self.num_rooms = config.getint('Metrics','num_rooms')
