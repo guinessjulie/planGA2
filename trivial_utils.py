@@ -1,6 +1,75 @@
 import hashlib
 import numpy as np
 from datetime import datetime
+import csv
+import random
+
+
+
+def save_results_to_csv(results, constraints=['None', 'None', 'None'], filename="floorplan_fitness_results.csv"):
+    """
+    List of fitness objects will be saved to a CSV file.
+    파일이 존재하면 이어서 저장, 존재하지 않으면 새로 생성.
+    """
+    # filename = create_filename('./testing_results', prefix=constraint, ext='csv')
+
+    # 'a' 모드로 파일을 열어 이어쓰기
+    file_exists = False
+    try:
+        with open(filename, 'r'):
+            file_exists = True  # 파일이 이미 존재하는지 체크
+    except FileNotFoundError:
+        pass
+
+    with open(filename, mode='a', newline='') as file:
+        writer = csv.writer(file)
+
+        # 파일이 존재하지 않으면 헤더를 추가
+        if not file_exists:
+            writer.writerow(['Size_Opt','Adj_Opt', 'Ori_Opt',  'Adjacency', 'Orientation', 'Size', 'Simplicity', 'Rectangularity', 'Regularity', 'PA Ratio', 'Weighted_Fitness'])
+
+        col1, col2, col3 = None, None, None
+        col1 = 1 if 'Size' in constraints else 0
+        col2 = 1 if 'adjacency' in constraints else 0
+        col3 = 1 if 'orientation' in constraints else 0
+
+        # 각 fitness 객체의 결과를 CSV에 기록
+        for fitness in results:
+            writer.writerow([
+                col1,
+                col2,
+                col3, # 세 가지 constraint 정보를 기록
+                fitness.adj_satisfaction,
+                fitness.orientation_satisfaction,
+                fitness.size_satisfaction,
+                fitness.simplicity,
+                fitness.rectangularity,
+                fitness.regularity,
+                fitness.pa_ratio,
+                fitness.fitness
+            ])
+
+def save_results_to_csv_batch(results, constraint = 'None', filename="floorplan_fitness_results.csv"):
+    """
+    List of tuples (floorplan, fitness) will be saved to a CSV file.
+    """
+    filename = create_filename('./testing_results', prefix=constraint, ext='csv' )
+    with open(filename, mode='w', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow(['Method','Adjacency','Orientation', 'Size', 'Simplicity' ,'Rectnagularity', 'Regularity','PA Ratio', 'Weighted_Fitness'])
+        for fitness in results:
+            writer.writerow([constraint,
+                             fitness.adj_satisfaction,
+                             fitness.orientation_satisfaction,
+                             fitness.size_satisfaction,
+                             fitness.simplicity,
+                             fitness.rectangularity,
+                             fitness.regularity,
+                             fitness.pa_ratio,
+                             fitness.fitness
+            ])
+
+
 
 def get_month_day_4_digit():
     now = datetime.now()

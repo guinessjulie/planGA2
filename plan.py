@@ -12,10 +12,11 @@ from collections import defaultdict
 import random
 from measure import categorize_boundary_cells
 from config_reader import read_constraint, read_config_boolean, check_adjacent_requirement, read_config_int
-from cells_utils import  is_valid_cell, is_inside
+from cells_utils import is_valid_cell, is_inside
 from plan_utils import dict_value_to_coordinates
 from options import Options
 from reqs import Req
+from scipy.ndimage import label
 
 # todo 1: 사이즈 작은 사이즈일 수록 빈 인접셀 적다. 이를 이용해서 초기화에 활용
 # todo 2: 인접 리스트를 만들어서 해당 조건 만족하도록
@@ -24,6 +25,181 @@ from reqs import Req
 # todo 4: 분리
 # info : adj_requirements를 추가했으나 성과가 없다. graph를 비교해서 방을 바꾸는 방법으로 가는 것도 방법
 # todo 0828: 일단 seed를 출력하고 fitness를 보자
+# todo 0905 option 컨트롤을 다 중앙으로 옮겨야 돼 여기저기 뒤죽박죽
+
+def locate_initial_cell(empty_grid, k):
+    options = Options()
+    ini_filename = 'constraints.ini'
+    adjacency_list = check_adjacent_requirement()
+    orientation_requirements = read_constraint(ini_filename, 'OrientationRequirements')
+
+    initialized_grid, initial_cells = place_seed(to_np_array(empty_grid), k,
+                                                 adjacency_list)  # info now seed does not have room number
+    display_process(initialized_grid, k, options, "Seed0")
+    initialized_grid, remaining_positions, assigned_seed_by = assign_room_id(initialized_grid, initial_cells,
+                                                           orientation_requirements,
+                                                           adjacency_list) # info seed now has the room_id
+    display_process(initialized_grid, k, options, "Seed2")
+    return initialized_grid, initial_cells, assigned_seed_by
+
+# info 방 개수만큼 랜덤하게  seed 셀을 선택해서 255로 채움
+def place_seed(grid_arr, k, adjacency_graph=None):
+    # Randomly place k rooms within the floorplan
+    rooms_placed = 0
+    cells_coords = set()
+    rooming_grid = grid_arr.copy()
+    m, n = grid_arr.shape
+
+    while rooms_placed < k:
+        row, col = random.randint(0, m - 1), random.randint(0, n - 1)
+        if rooming_grid[row, col] == 0:  # Ensure the cell is within the floorplan and unroomed
+            rooms_placed += 1
+            rooming_grid[row, col] = 255  # 방을 표시하기 위해 값을 1로 설정
+            cells_coords.add((row, col))  # 셀의 위치를 저장
+
+    return rooming_grid, cells_coords
+
+
+
+# 랜덤하게 방향요구사항 인접 요구사항을 선택하여 seed에 room id 할당
+def assign_room_id(grid, cell_positions, orientation_requirements, adjacency_requirements):
+    assigned_seed_by=set()
+    # 1. 방향 요구 사항에 따라 방 배치
+    new_grid = grid.copy()
+    if random.choice([True, False]):
+        new_grid = assign_by_orientation(grid, cell_positions, orientation_requirements)
+        assigned_seed_by.add('orientation')
+    # 2. 인접성 요구 사항에 따라 방 배치
+    if random.choice([True, False]):
+        new_grid = assign_by_adjacency(new_grid, cell_positions, adjacency_requirements)
+        assigned_seed_by.add('adjacency')
+
+    # 3. 빈 방셀을 모두 무작위로 assign
+    new_grid = assign_undecided_roomid_for_initial_cells(new_grid, cell_positions)
+
+    return new_grid, cell_positions, assigned_seed_by
+
+
+# info 1: by orientation
+def assign_by_orientation(grid, cell_positions, orientation_requirements):
+    new_grid = np.copy(grid)
+    scores = get_orientation_scores(cell_positions)
+
+    for room_num, direction in orientation_requirements.items():
+        pos = scores[direction].pop()
+        delete_cell_from(scores, pos)
+        new_grid[pos] = room_num
+
+    return new_grid
+
+def get_orientation_scores(cell_positions):
+    north = sorted(cell_positions, key=lambda pos: pos[0], reverse=True)
+    west = sorted(cell_positions, key=lambda pos: pos[1], reverse=True)
+
+    scores = {
+        'north': north,
+        'south': north[::-1],
+        'west': west,
+        'east': west[::-1]
+    }
+    return scores
+
+
+def delete_cell_from(scores, cell):
+    for direction, cell_list in scores.items():
+        if cell in cell_list:
+            scores[direction].remove(cell)
+    return scores
+
+
+# info 2: by adjacency
+def assign_by_adjacency(grid, cell_positions, adjacency_requirements):
+    new_grid = np.copy(grid)
+
+    assigned_room_positions = get_assigned_cell_positions(grid)
+    distances = calculate_sorted_distances(cell_positions)
+    adj_dict = defaultdict(list)
+
+    for a, b in adjacency_requirements:
+        adj_dict[a].append(b)
+        adj_dict[b].append(a)
+
+    for room_id, adj_list in adj_dict.items():
+        if set(assigned_room_positions.keys()) == set(range(1, len(cell_positions) + 1)):
+            break
+
+        if not set(adj_list).issubset(assigned_room_positions):
+            unassigned_pos = set(distances.keys()) - set(assigned_room_positions.values())
+            if unassigned_pos:
+                room_pos = unassigned_pos.pop()
+                unassigned_pos_distances = [
+                    room_dist for room_dist in distances[room_pos]
+                    if room_dist[0] not in assigned_room_positions.values()
+                ]
+
+                for adj_id in adj_list:
+                    if adj_id not in assigned_room_positions and unassigned_pos_distances:
+                        adj_pos, _ = unassigned_pos_distances.pop()
+                        new_grid[adj_pos] = adj_id
+                        assigned_room_positions[adj_id] = adj_pos
+
+        elif room_id in assigned_room_positions:
+            room_pos = assigned_room_positions[room_id]
+            unassigned_pos_distances = [
+                room_dist for room_dist in distances[room_pos]
+                if room_dist[0] not in assigned_room_positions.values()
+            ]
+            for adj_id in adj_list:
+                if adj_id not in assigned_room_positions and unassigned_pos_distances:
+                    adj_pos, _ = unassigned_pos_distances.pop()
+                    new_grid[adj_pos] = adj_id
+                    assigned_room_positions[adj_id] = adj_pos
+
+    return new_grid
+
+
+def get_assigned_cell_positions(grid):
+    return {grid[tuple(cell)]: tuple(cell) for cell in np.argwhere((grid > 0) & (grid != 255))}  # room_id : position
+
+
+# 각 셀 사이의 거리를 구한 후
+def calculate_sorted_distances(cell_positions):
+    distances = {}
+    for pos1 in cell_positions:
+        distances[pos1] = sorted(
+            [(pos2, abs(pos1[0] - pos2[0]) + abs(pos1[1] - pos2[1])) for pos2 in cell_positions if pos1 != pos2],
+            key=lambda x: x[1],
+            reverse=True)
+    return distances
+
+
+# info 3 아직 방 배정이 안된 초기셀이 있으면 방배정을 한다.
+def assign_undecided_roomid_for_initial_cells(grid, cell_positions):
+    assigned_room_positions = get_assigned_cell_positions(grid)
+    unassigned_pos_set = set(cell_positions) - set(
+        assigned_room_positions.values())  # underway 0904 to see  when to set cell_positions
+    all_room_ids = set(range(1, len(cell_positions) + 1))
+    unassigned_id_set = all_room_ids - set(assigned_room_positions.keys())
+
+    for pos, room_id in zip(unassigned_pos_set, unassigned_id_set):
+        grid[pos] = room_id
+    return grid
+
+
+############################################################
+# Utility Function
+############################################################
+def display_process(initialized_grid, k, options, prefix, postfix=None):
+    if options is None:
+        options = Options()
+    if options.display is False and options.save is False:
+        return
+    # initialized_grid, initial_cells = place_k_rooms_on_grid(to_np_array(empty_grid), k) # todo place_seed에서 그래프 만족시키는 seed 새로 만듦
+    path = trivial_utils.create_folder_by_datetime()
+    full_path = trivial_utils.create_filename(path, prefix, postfix = str(postfix), filename='', ext='png')
+    GridDrawer.color_cells_by_value(initialized_grid, full_path, display=options.display, save=options.save,
+                                    num_rooms=k)
+
 
 
 
@@ -101,37 +277,16 @@ def assign_cells_to_adjacent_room(floorplan, room_id):
 
     return floorplan
 
-
+###########################################################
+# info functions that is not used but maybe useful later
+##########################################################
+# 주어진 adjacency_list로 nx Graph를 빌드
 def create_req_graph(adjacency_list):
     adjacency_graph = nx.Graph()
     adjacency_graph.add_edges_from(adjacency_list)
     if not nx.check_planarity(adjacency_graph):
         return False
     return adjacency_graph
-
-def locate_initial_cell(empty_grid, k):
-    options = Options()
-    ini_filename = 'constraints.ini'
-    adjacency_list = check_adjacent_requirement()
-    orientation_requirements = read_constraint(ini_filename, 'OrientationRequirements')
-
-    initialized_grid, initial_cells = place_seed(to_np_array(empty_grid), k, adjacency_list ) #info now seed does not have room number
-    display_process(initialized_grid, k, options, "Seed0")
-    initialized_grid, remaining_positions = assign_rooms_by_orientation_adjacency(initialized_grid, initial_cells, orientation_requirements, adjacency_list)
-    # initialized_grid, initial_cells = relocate_by_orientation_and_adjacency(initialized_grid, initial_cells,orientation_requirements, adjacency_list)
-#   display_process(initialized_grid, k, options, "Seed1")
-#   initialized_grid, initial_cells = relocate_by_adjacency(initialized_grid, initial_cells, adjacency_requirements=adjacency_list)
-    display_process(initialized_grid, k, options, "Seed2")
-    return initialized_grid, initial_cells
-
-def display_process(initialized_grid, k,options, prefix):
-    if options is None:
-        options = Options()
-    # initialized_grid, initial_cells = place_k_rooms_on_grid(to_np_array(empty_grid), k) # todo place_seed에서 그래프 만족시키는 seed 새로 만듦
-    path = trivial_utils.create_folder_by_datetime()
-    full_path = trivial_utils.create_filename(path, prefix, '', '', 'png')
-    GridDrawer.color_cells_by_value(initialized_grid, full_path, display=options.display, save=options.save,
-                                    num_rooms=k)
 
 
 def calculate_manhattan_distances(cell_positions):
@@ -148,6 +303,7 @@ def calculate_manhattan_distances(cell_positions):
             distances.append(((pos1, pos2), manhattan_distance))
 
     return distances
+
 
 def calculate_relative_scores(cell_positions):
     scores = {pos: {'north': 0, 'south': 0, 'west': 0, 'east': 0} for pos in cell_positions}
@@ -168,201 +324,31 @@ def calculate_relative_scores(cell_positions):
         scores[pos]['east'] = len(sorted_by_east_west) - 1 - i  # 동쪽 점수는 반대 방향으로
 
     return scores
-# info improved code replaced belowwer
-# def calculate_sorted_distances(cell_positions):
-#     sorted_distances = {}
-#     cell_positions_list = list(cell_positions)
-#     for i in range(len(cell_positions_list)):
-#         pos1 = cell_positions_list[i]
-#         distances = []
-#         distances_dict = {}
-#         for j in range(len(cell_positions_list)):
-#             if i != j:
-#                 pos2 = cell_positions_list[j]
-#                 manhattan_distance = abs(pos1[0] - pos2[0]) + abs(pos1[1] - pos2[1])
-#                 distances.append((pos2, manhattan_distance))
-#                 # distances[pos2] = manhattan_distance # #underway: convert to sorted_distances to dictionary
-#                 distances_dict[pos2] = manhattan_distance # #underway: convert to sorted_distances to dictionary
-#         # 거리 순으로 정렬
-#         # sorted_distances[pos1] = sorted(distances, key=lambda x: x[1]) #underway: convert to sorted_distances to dictionary
-#         sorted_distances[pos1] = sorted(distances_dict.items(), key=lambda x: x[1], reverse = True)
-#     return sorted_distances
+
 #######################################################
-####  여기부터 수정
+####  info allocate room
 #####################################################
 
-
-def get_orientation_scores(cell_positions):
-    north = sorted(cell_positions, key=lambda pos: pos[0], reverse=True)
-    west = sorted(cell_positions, key=lambda pos: pos[1], reverse=True)
-
-    scores = {
-        'north':  north,
-        'south':  north[::-1],
-        'west':  west,
-        'east':  west[::-1]
-    }
-    return scores
-
-
-def delete_cell_from(scores, cell):
-    for direction, cell_list in scores.items():
-        if cell in cell_list:
-            scores[direction].remove(cell)
-    return scores
-
-# 각 셀 사이의 거리를 구한 후
-def calculate_sorted_distances(cell_positions):
-    distances = {}
-    for pos1 in cell_positions:
-        distances[pos1] = sorted(
-            [(pos2, abs(pos1[0] - pos2[0]) + abs(pos1[1] - pos2[1])) for pos2 in cell_positions if pos1 != pos2],
-            key=lambda x: x[1],
-            reverse = True)
-    return distances
-
-
-def assign_by_orientation(grid, cell_positions, orientation_requirements):
-    new_grid = np.copy(grid)
-    scores = get_orientation_scores(cell_positions)
-
-    for room_num, direction in orientation_requirements.items():
-        pos = scores[direction].pop()
-        delete_cell_from(scores, pos)
-        new_grid[pos] = room_num
-
-    return new_grid
-
-def get_assigned_cell_positions(grid):
-    return {grid[tuple(cell)]:tuple(cell) for cell in np.argwhere((grid > 0) & (grid != 255))} # room_id : position
-
-def assign_by_adjacency(grid, cell_positions, adjacency_requirements):
-    new_grid = np.copy(grid)
-    #assigned_room_positions = {
-    #    new_grid[tuple(cell)]: tuple(cell)
-    #    for cell in np.argwhere((new_grid > 0) & (new_grid != 255))
-    #}
-    assigned_room_positions = get_assigned_cell_positions(grid)
-    distances = calculate_sorted_distances(cell_positions)
-    adj_dict = defaultdict(list)
-
-    for a, b in adjacency_requirements:
-        adj_dict[a].append(b)
-        adj_dict[b].append(a)
-
-    for room_id, adj_list in adj_dict.items():
-        if set(assigned_room_positions.keys()) == set(range(1, len(cell_positions) + 1)):
-            break
-
-        if not set(adj_list).issubset(assigned_room_positions):
-            unassigned_pos = set(distances.keys()) - set(assigned_room_positions.values())
-            if unassigned_pos:
-                room_pos = unassigned_pos.pop()
-                unassigned_pos_distances = [
-                    room_dist for room_dist in distances[room_pos]
-                    if room_dist[0] not in assigned_room_positions.values()
-                ]
-
-                for adj_id in adj_list:
-                    if adj_id not in assigned_room_positions and unassigned_pos_distances:
-                        adj_pos, _ = unassigned_pos_distances.pop()
-                        new_grid[adj_pos] = adj_id
-                        assigned_room_positions[adj_id] = adj_pos
-
-        elif room_id in assigned_room_positions:
-            room_pos = assigned_room_positions[room_id]
-            unassigned_pos_distances = [
-                room_dist for room_dist in distances[room_pos]
-                if room_dist[0] not in assigned_room_positions.values()
-            ]
-            for adj_id in adj_list:
-                if adj_id not in assigned_room_positions and unassigned_pos_distances:
-                    adj_pos, _ = unassigned_pos_distances.pop()
-                    new_grid[adj_pos] = adj_id
-                    assigned_room_positions[adj_id] = adj_pos
-
-    # Ensure that any unassigned positions and room IDs are handled
-    # all_positions = set(cell_positions)
-    # unassigned_pos_set = all_positions - set(assigned_room_positions.values())
-    # all_room_ids = set(range(1, len(cell_positions) + 1))
-    # unassigned_id_set = all_room_ids - set(assigned_room_positions.keys())
-#
-    # for pos, room_id in zip(unassigned_pos_set, unassigned_id_set):
-    #     new_grid[pos] = room_id
-
-    return new_grid
-
-
-def fill_unassigned(grid, cell_positions):
-    assigned_room_positions = get_assigned_cell_positions(grid)
-    unassigned_pos_set = set(cell_positions) - set(assigned_room_positions.values())
-    all_room_ids = set(range(1, len(cell_positions) + 1))
-    unassigned_id_set = all_room_ids - set(assigned_room_positions.keys())
-
-    for pos, room_id in zip(unassigned_pos_set, unassigned_id_set):
-        grid[pos] = room_id
-    return grid
-
-def assign_rooms_by_orientation_adjacency(grid, cell_positions, orientation_requirements, adjacency_requirements):
-    # 1. 방향 요구 사항에 따라 방 배치
-    new_grid = grid.copy()
-    if random.choice([True, False]) :
-        new_grid = assign_by_orientation(grid, cell_positions, orientation_requirements)
-        print(f'by orientation')
-    # 2. 인접성 요구 사항에 따라 방 배치
-    if random.choice([True, False]) :
-        new_grid = assign_by_adjacency(new_grid, cell_positions, adjacency_requirements)
-        print(f'by adjacency')
-
-    # 3. 빈 방셀을 모두 무작위로 assign
-    new_grid = fill_unassigned(new_grid, cell_positions)
-
-    return new_grid, cell_positions
-
-
-def assign_rooms_by_orientation(grid, cell_positions, orientation_requirements):
-    scores = calculate_relative_scores(cell_positions)
-    new_grid = np.copy(grid)
-
-    for room_num, direction in orientation_requirements.items():
-        best_pos = None
-        best_score = -float('inf')
-
-        for pos, score in scores.items():
-            if direction == 'north' and score['north'] > best_score:
-                best_score = score['north']
-                best_pos = pos
-            elif direction == 'south' and score['south'] > best_score:
-                best_score = score['south']
-                best_pos = pos
-            elif direction == 'west' and score['west'] > best_score:
-                best_score = score['west']
-                best_pos = pos
-            elif direction == 'east' and score['east'] > best_score:
-                best_score = score['east']
-                best_pos = pos
-
-        if best_pos:
-            new_grid[best_pos] = room_num
-            cell_positions.remove(best_pos)
-
-    return new_grid, cell_positions
-
-def create_floorplan(initialized_grid, k, options, reqs = None):
+def create_floorplan(initialized_grid, k, options, reqs=None):
     if reqs is None:
         reqs = Req()
     grid_copy = initialized_grid.copy()
-    display_process(grid_copy, k=k, options=options, prefix = 'Init0') #info just save and display on pycharm
+    display_process(grid_copy, k=k, options=options, prefix='Init0')  # info just save and display on pycharm
 
-    if options.min_size_alloc:
-        floorplan = allocate_room_with_size(grid_copy, options.display, save=options.save, num_rooms=k, reqs = reqs)
-    else :
-        floorplan = allocate_rooms(grid_copy, display =  options.display, save=options.save, num_rooms=k)
+    if options.min_size_alloc is True:
+        floorplan = allocate_room_with_size(grid_copy, options.display, save=options.save, num_rooms=k, reqs=reqs)
+    else:
+        floorplan = allocate_rooms(grid_copy, display=options.display, save=options.save, num_rooms=k)
 
     return floorplan
 
 
-def allocate_room_with_size(floorplan, display=False, save=True, num_rooms=8, reqs = None):
+
+# info adj와 orientation Requirement는 place_seed에서 처리, size는 allocate_room_with_size 에서 처리
+#  structure App.create_floorplan_from_seed > Floorplan.iterate_optimal_floorplans
+#  > plan.create_floorplan > allocate_rooms_with_size
+def allocate_room_with_size(floorplan, display=False, save=True, num_rooms=8, reqs=None):
+    print(f'allocate_room_with_size')
     def choose_new_adjacent_cell(floorplan, cell):
         row, col = cell
         rows, cols = floorplan.shape
@@ -382,7 +368,7 @@ def allocate_room_with_size(floorplan, display=False, save=True, num_rooms=8, re
             active_cells.add(cell)
 
         for adj_cell in all_active_neighbors(cell, floorplan):
-            if not len(collect_candidate_set(adj_cell, floorplan)) > 0:
+            if not len(get_unassigned_neighbor_set(adj_cell, floorplan)) > 0:
                 if adj_cell in active_cells:
                     active_cells.remove(adj_cell)
 
@@ -400,16 +386,27 @@ def allocate_room_with_size(floorplan, display=False, save=True, num_rooms=8, re
     expandable_rooms = set(range(1, num_rooms + 1))  # 확장 가능한 방을 추적하기 위한 집합
     num_iter = 0
     while active_cells and expandable_rooms:
+        if len(expandable_rooms) == 1:
+            room_id = expandable_rooms.pop()
+            if not is_room_split(floorplan, room_id):  # 한 덩어리인데, assign할 방이 하나 남아있다는 소리
+                fill_empty_cell_with_value(floorplan, room_id)  # 나머지 모든 방을 다 assign하고 floorplan을 리턴
+                return floorplan
         num_iter += 1
+        if len(expandable_rooms) == 1:
+            room_id = expandable_rooms.pop()
+            if not is_room_split(floorplan, room_id): # 한 덩어리인데, assign할 방이 하나 남아있다는 소리
+                fill_empty_cell_with_value(floorplan, room_id) # 나머지 모든 방을 다 assign하고 floorplan을 리턴
+                return floorplan
+
         # print(f'iter={num_iter} Active cells length: {len(active_cells)}') info to debug to avoid infinite loop
         room_to_coordinates = dict_value_to_coordinates(floorplan)
-        room_numbers = [room for room in expandable_rooms if room not in max_area_exceeded]
+        room_numbers = [room for room in expandable_rooms if room not in max_area_exceeded] # todo 그 때 그 때 저장하는 게 어때? 매번 하지 않도록 변경
 
         if not room_numbers:
             break  # 모든 방이 최대 면적을 초과하면 루프를 종료
 
         room_idx = random.choice(room_numbers)
-        room = room_idx
+        room = room_idx # todo 쓸데없는 중복
         all_cells = room_to_coordinates.get(room, [])
         current_active_cells = [c for c in all_cells if c in active_cells]
 
@@ -441,7 +438,8 @@ def allocate_room_with_size(floorplan, display=False, save=True, num_rooms=8, re
 
         # is_inside 함수로 경계 확인 후 색칠
         parallel_cells = [tuple(np.add(c, dr)) for c in all_cells if
-                          c != cell and is_inside(floorplan, tuple(np.add(c, dr))) and floorplan[tuple(np.add(c, dr))] == 0]
+                          c != cell and is_inside(floorplan, tuple(np.add(c, dr))) and floorplan[
+                              tuple(np.add(c, dr))] == 0]
 
         for c in parallel_cells:
             floorplan[c] = floorplan[cell]
@@ -452,116 +450,117 @@ def allocate_room_with_size(floorplan, display=False, save=True, num_rooms=8, re
         # GridDrawer.color_cells_by_value(floorplan, filename, display=display, save=save, num_rooms=num_rooms) # info to see process take comment off
 
     # 빈 셀 채우기: 할당되지 않은 셀에 인접한 셀의 방 번호를 할당
-    rows, cols = floorplan.shape
-    for i in range(rows):
-        for j in range(cols):
-            if floorplan[i, j] == 0:  # 할당되지 않은 셀 찾기
-                adjacent_rooms = [floorplan[i + di, j + dj] for di, dj in [(-1, 0), (1, 0), (0, -1), (0, 1)]
-                                  if is_inside(floorplan, (i + di, j + dj)) and floorplan[i + di, j + dj] > 0]
-                if adjacent_rooms:
-                    floorplan[i, j] = random.choice(adjacent_rooms)  # 인접한 셀 중 임의의 방 번호로 할당
-
-
+    # fill_empty_cells(floorplan) # underway 0904to see if it works
+    floorplan = fill_unassigned_cells(floorplan)
     # filename, current_step = trivial_utils.create_filename_in_order('png', 'Reform', current_step) # info to see process take comment off
     # GridDrawer.color_cells_by_value(floorplan, filename, display=display, save=save, num_rooms=num_rooms)# info to see process take comment off
     return floorplan
 
+def fill_empty_cell_with_value(floorplan, room_id):
+    # 빈 셀 채우기: 할당되지 않은 셀에 인접한 셀의 방 번호를 할당
+    empty_cells = {tuple(x) for x in np.argwhere(floorplan == 0)}  # 빈 셀들의 좌표 리스트
+    if len(empty_cells) == 0:
+        return floorplan
 
-def allocate_room_with_size_infinite_loop(floorplan, display=False, save=True, num_rooms=8):
+    # 빈 셀에 방 번호 배정, Fancy Indexing 사용
+    x, y = zip(*empty_cells)
+    floorplan[(x, y)] = room_id
+    return floorplan
+
+
+
+def is_room_split(floorplan, room_number):
+    """
+    주어진 방 번호의 덩어리가 여러 개로 나뉘어졌는지 확인하는 함수.
+
+    Parameters:
+    - floorplan: 2D numpy array, 플로어플랜
+    - room_number: int, 확인할 방 번호
+
+    Returns:
+    - bool: 방이 여러 덩어리로 나뉘어진 경우 True, 아니면 False
+    """
+    binary_floorplan = (floorplan == room_number).astype(int)
+    labeled_array, num_features = label(binary_floorplan)
+    return num_features > 1
+
+
+def allocate_rooms(floorplan, display=False, save=True, num_rooms=8):
+    print(f'allocate_room')
+
     def choose_new_adjacent_cell(floorplan, cell):
         row, col = cell
         rows, cols = floorplan.shape
-        # Ensure we are within the floorplan and the cell has not been colored yet
-        if floorplan[row, col] > 0:  # Adjusted condition to ensure we're targeting uncolored cells
-            valid_offsets = [(dy, dx) for dy, dx in [(-1, 0), (1, 0), (0, -1), (0, 1)]
-                             if 0 <= row + dy < rows and 0 <= col + dx < cols and floorplan[row + dy, col + dx] == 0]
-            if valid_offsets:
-                dr = random.choice(valid_offsets)
-                return (row + dr[0], col + dr[1]), dr
+        # 셀 주변의 유효한 빈 셀 찾기
+        valid_offsets = [(dy, dx) for dy, dx in [(-1, 0), (1, 0), (0, -1), (0, 1)]
+                         if 0 <= row + dy < rows and 0 <= col + dx < cols and floorplan[row + dy, col + dx] == 0]
+        if valid_offsets:
+            dr = random.choice(valid_offsets)
+            return (row + dr[0], col + dr[1]), dr
         return None, (0, 0)
 
     def update_active_cells(floorplan, cell, active_cells):
-        if not has_empty_neighbor(floorplan, cell[0], cell[1]): # no neighbor to expand
-            if cell in active_cells:
-                active_cells.remove(cell)
+        # 셀에 인접한 빈 셀이 없으면 active_cells에서 제거
+        if not has_empty_neighbor(floorplan, cell[0], cell[1]):
+            active_cells.discard(cell)
         else:
-            active_cells.add(cell) # can expand
+            active_cells.add(cell)
 
-        for adj_cell in all_active_neighbors(cell, floorplan): # neighbor 중 방이 할당된 셀들
-            if not len(collect_candidate_set(adj_cell, floorplan)) > 0: # 그 할당된 이웃셀의 이웃 중 빈 셀이 없으면 더이상 확장 불가능
-                if adj_cell in active_cells: # 그러므로 그 이웃셀은 active_cells에서 제거
-                    active_cells.remove(adj_cell)
+        # 인접한 셀들에 대해서도 같은 작업 수행
+        neighbors = all_active_neighbors(cell, floorplan)
+        for adj_cell in neighbors:
+            if not has_empty_neighbor(floorplan, adj_cell[0], adj_cell[1]):
+                active_cells.discard(adj_cell)
+            else:
+                active_cells.add(adj_cell)
 
-    def is_inside(floorplan, coord):
-        """Check if the given coordinate is inside the bounds of the floorplan."""
-        rows, cols = floorplan.shape
-        return 0 <= coord[0] < rows and 0 <= coord[1] < cols
-
+    options = Options()
     active_cells = process_valid_cells(floorplan)
     current_step = 0
 
-    # 방의 현재 면적을 추적하기 위한 딕셔너리
-    room_areas = {room_id: np.sum(floorplan == room_id) for room_id in range(1, num_rooms + 1)}
-    max_area_exceeded = set()  # 최대 면적을 초과한 방의 번호를 저장할 집합
-
-    while_activecell =0
-    while active_cells:
-        print(f'while_activecell = {while_activecell}')
-        while_activecell += 1
+    room_numbers = set(range(1, num_rooms + 1))  # 할당된 방 번호들
+    while active_cells:  # active_cells가 남아있는 동안 반복
         room_to_coordinates = dict_value_to_coordinates(floorplan)
-        room_numbers = [room for room in range(1, num_rooms + 1) if room not in max_area_exceeded]
 
-        if not room_numbers:
-            break  # 모든 방이 최대 면적을 초과하면 루프를 종료
+        for room in list(room_numbers):  # 할당된 방들에 대해 반복
+            all_cells = room_to_coordinates.get(room, [])
+            current_active_cells = [c for c in all_cells if c in active_cells]
 
-        room_idx = random.randrange(len(room_numbers)) # todo 여기서 계속 랜덤을 선택하면 무한정 선택과 반복만 하게 된다.
-        room = room_numbers[room_idx]
-        all_cells = room_to_coordinates.get(room, [])
-        current_active_cells = [c for c in all_cells if c in active_cells]
-        if not current_active_cells:
-            if while_activecell > 50:
-                print(f'active_cells = {active_cells}, current_active_cells={current_active_cells}')
-            continue
-        cell = random.choice(current_active_cells)
+            if not current_active_cells:
+                room_numbers.discard(room)  # 더 이상 확장할 수 없는 방 제거
+                continue
 
-        # 현재 방의 면적이 최대 면적을 초과했는지 확인
-        req = Req()
-        min_area, max_area = req.get_area_range(room)
-        if max_area is not None and room_areas[room] >= max_area:
-            max_area_exceeded.add(room)  # 방을 더 이상 확장하지 않도록 집합에 추가
-            continue
+            # 활성 셀 중 하나를 선택하여 새로운 셀을 할당
+            cell = random.choice(current_active_cells)
+            new_cell, dr = choose_new_adjacent_cell(floorplan, cell)
 
-        new_cell, dr = choose_new_adjacent_cell(floorplan, cell)
-        if new_cell is None:
-            continue
+            if new_cell is None:
+                continue
 
-        # 새로운 셀을 추가하고 면적 업데이트
-        floorplan[new_cell] = floorplan[cell]
-        room_areas[room] += 1  # 셀이 추가되었으므로 면적 증가
-        update_active_cells(floorplan, cell, active_cells) #  active_cells는 active_cells에서 현재 셀의 이웃셀 중 확장불가능한 것을 제거함
-        update_active_cells(floorplan, new_cell, active_cells) # 새 셀의 이웃셀 중 확장 불가능 한 것을 제거함. # underway: 이렇게 계속 제거를 하는데도 active_cells가 남아있다면 무한루프
-        # is_inside 함수로 경계 확인 후 색칠
-        parallel_cells = [tuple(np.add(c, dr)) for c in all_cells if
-                          c != cell and is_inside(floorplan, tuple(np.add(c, dr))) and floorplan[tuple(np.add(c, dr))] == 0]
+            # 새로운 셀에 방 번호를 할당하고 active_cells 업데이트
+            floorplan[new_cell] = floorplan[cell]
+            update_active_cells(floorplan, cell, active_cells)
+            update_active_cells(floorplan, new_cell, active_cells)
 
-        for c in parallel_cells:
-            floorplan[c] = floorplan[cell]
-            room_areas[room] += 1  # 셀이 추가되었으므로 면적 증가
-            update_active_cells(floorplan, c, active_cells)
+            # 병렬로 확장 가능한 셀들도 할당
+            parallel_cells = [tuple(np.add(c, dr)) for c in all_cells
+                              if c != cell and floorplan[tuple(np.add(c, dr))] == 0 and is_inside(floorplan,
+                                                                                                  tuple(np.add(c, dr)))]
 
-        filename, current_step = trivial_utils.create_filename_in_order('png', 'Step', current_step)
-        GridDrawer.color_cells_by_value(floorplan, filename, display=display, save=save, num_rooms=num_rooms)
+            for c in parallel_cells:
+                floorplan[c] = floorplan[cell]
+                update_active_cells(floorplan, c, active_cells)
 
-    filename, current_step = trivial_utils.create_filename_in_order('png', 'Reform', current_step)
-    GridDrawer.color_cells_by_value(floorplan, filename, display=display, save=save, num_rooms=num_rooms)
+        # 과정 중간에 floorplan을 보여주는 함수 호출 (display 설정에 따라)
+        display_process(floorplan, num_rooms, options, prefix='Step', postfix=current_step)
+        current_step += 1  # 다음 스텝으로 증가
+
     return floorplan
 
-#  현재 셀이 valid 한가
-def check_valid_current_cell(grid_assigning, cell):
-    row, col = cell[0], cell[1]
-    if not has_empty_neighbor(grid_assigning, row, col):
-        return False
-    return True
+
+###################################
+# info utilities
+###################################
 
 
 def all_active_neighbors(cell, floorplan):
@@ -569,16 +568,26 @@ def all_active_neighbors(cell, floorplan):
     row, col = cell
     adjs = set()
     for dx, dy in directions:
-        new_row, new_col = row + dy, col + dx
+        new_row, new_col = row + dx, col + dy
         if 0 <= new_row < floorplan.shape[0] and 0 <= new_col < floorplan.shape[1]:  # 범위내에 있으면
-            if floorplan[new_row, new_col] > 0:  # 빈 셀은 할 필요가 없을 듯
+            if floorplan[new_row, new_col] > 0:  # 빈 셀은 제외
                 adjs.add((new_row, new_col))
     return adjs
 
 
 
+# 범위 내에 있고 옆에 하나라도 빈 셀이 있으면 True
+def has_empty_neighbor(grid_assigning, row, col):
+    directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+    for dy, dx in directions:
+        new_row, new_col = row + dy, col + dx
+        if 0 <= new_row < grid_assigning.shape[0] and 0 <= new_col < grid_assigning.shape[1]:
+            if grid_assigning[new_row, new_col] == 0:
+                return True
+    return False
+
 # 빈 이웃이 하나라도 있으면 그 이웃을 valid_neighbor_set에 추가해서 이를 리턴한다.
-def collect_candidate_set(cell, grid_assigning):
+def get_unassigned_neighbor_set(cell, grid_assigning):
     # print(f'\t\tcollect_valid_adjacent_cells: {cell}')
     directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
     row, col = cell[0], cell[1]
@@ -594,6 +603,49 @@ def collect_candidate_set(cell, grid_assigning):
                 valid_neighbor_cells.add(neighbor_cell)
     # print(f'\t\tcollect_candidate_set:{cell} returning valid_neighbor_cells{valid_neighbor_cells}')
     return valid_neighbor_cells
+
+# 아직 할당되지 않은 빈 이웃이 있는 모든 할당된 셀 구하기
+def process_valid_cells(grid_assigning, insulated_cells=None, row_range=None):  # 두 개의 parameter가 필요없어서 기본값을 None으로 주었음
+    valid_cells = set()
+    #    print(f'insulated_cells={insulated_cells} in process_valid_cells')
+    for row in range(grid_assigning.shape[0]):
+        for col in range(grid_assigning.shape[1]):
+            # if grid_assigning[row, col] > 0 and grid[row][col] == 1:
+            if grid_assigning[row, col] > 0:
+                if has_empty_neighbor(grid_assigning, row, col):
+                    valid_cells.add((row, col))
+    return valid_cells
+
+
+def fill_unassigned_cells(floorplan):
+    """
+    빈 셀이 남아있을 때까지 반복해서 빈 셀을 인접한 방 번호로 채웁니다.
+    """
+    while True:
+        empty_cells = [tuple(x) for x in np.argwhere(floorplan == 0)]  # 빈 셀들의 좌표 리스트
+        if not empty_cells:
+            break  # 빈 셀이 없으면 종료
+
+        any_cell_filled = False  # 빈 셀이 채워졌는지 확인하는 플래그
+
+        for cell in empty_cells:
+            # 빈 셀에 인접한 방 번호들 추출
+            neighbors_rooms = all_active_neighbors(cell, floorplan)
+
+            if neighbors_rooms:  # 인접한 방 번호가 있는 경우
+                selected_adj_cell = random.choice(list(neighbors_rooms))  # 무작위로 인접한 방 좌표 선택
+                floorplan[cell] = floorplan[selected_adj_cell]  # 해당 빈 셀을 선택한 방 번호로 채움
+                any_cell_filled = True  # 최소한 하나의 셀이 채워졌음을 기록
+            else:
+                print(f"No adjacent room for cell {cell}, skipping.")
+
+        # 더 이상 채울 수 있는 셀이 없으면 루프 종료
+        if not any_cell_filled:  # empty_cell이 비어서 iteration을 하지 못했거나, valid한 인접 방이 없어서 아무것도 못한 경우
+            print("No more cells can be filled.")
+            break
+
+    return floorplan
+
 
 
 # todo 2/3 이상 진행되었을 때 이걸 체크해서 한꺼번에 채우자
@@ -614,88 +666,11 @@ def get_unique_values(floorplan, cells):
         unique_values.add(floorplan[cell])
     return unique_values
 
-# todo active_cells를 복사하지 않고 바로 이용
-def allocate_rooms(floorplan, display=False, save=True, num_rooms=8):
 
-    # todo 여기서는 그냥 choose만 하고, return 값은 새 셀의 좌표와 방향
-    def choose_new_adjacent_cell(floorplan, cell):
-        row, col = cell
-        rows, cols = floorplan.shape
-        # Ensure we are within the floorplan and the cell has not been colored yet
-        if floorplan[row, col] > 0:  # Adjusted condition to ensure we're targeting uncolored cells
-            valid_offsets = [(dy, dx) for dy, dx in [(-1, 0), (1, 0), (0, -1), (0, 1)]
-                             if 0 <= row + dy < rows and 0 <= col + dx < cols and floorplan[row + dy, col + dx] == 0]
-            if valid_offsets:
-                dr = random.choice(valid_offsets)
-                return (row + dr[0], col + dr[1]), dr
-        else:
-            return None, (0,0)
 
-    # 0인 neighbor가 없고 즉 더이상 확장할 수 없는데 그 셀이 actie_cells 리스트에 있으면 거기서 제거
-    # 0인 네이버가 있으면 무조건 active cell에 추가
-    def update_active_cells(floorplan,cell, active_cells):
-        if not has_empty_neighbor(floorplan, cell[0], cell[1]): # not( has_neighbor_zero = 범위 안에 있고 0인 인접셀이 하나라도 있으면)
-            if cell in active_cells: # 그 셀은 더이상 active하지 않으므로 active_cells에서 제거하고
-                active_cells.remove(cell)
-        else:
-            active_cells.add(cell)
-
-        # 이 셀이 더이상 확장 가능하거나 가능하지 않거나 상관없이 모든 인접셀에 대해서 다시 candidate를 구한다. if 문에서 들어가면
-        for adj_cell in all_active_neighbors(cell, floorplan):
-            if not len(collect_candidate_set(adj_cell, floorplan)) > 0:  # has no candidate
-                if adj_cell in active_cells:
-                    active_cells.remove(adj_cell)
-
-    active_cells = process_valid_cells(floorplan)
-    current_step = 0
-
-    while_activecell =0
-    while_room_number = 0
-    while active_cells:
-        print(f'while_activecell = {while_activecell}')
-        while_activecell += 1
-        room_to_coordinates = dict_value_to_coordinates(floorplan)
-        room_numbers = list(range(1, num_rooms+1))
-        while room_numbers:
-            print(f'while_room_number = {while_room_number}')
-            while_room_number +=1
-            room_idx = random.randrange(len(room_numbers))
-            room = room_numbers.pop(room_idx)
-            all_cells = room_to_coordinates.get(room, [])
-            # valid한  coordsnates를 찾아라
-            current_active_cells = [c for c in all_cells if c in active_cells]
-            if not current_active_cells :
-                continue# 현재 선택된 방의 모든 valid한 셀
-            cell = random.choice(current_active_cells) #todo cannot choose from an empty sequence
-            # just pick one from each cell
-            new_cell, dr = choose_new_adjacent_cell(floorplan, cell) # todo 이 버전은 값은 안변하고 셀만 구한다. 일단 간직만 하자. 변경하는 것은 나중에
-            if new_cell is None:
-                continue
-            # assign_room
-            # 바꾸려고 하는 셀이 원래셀이 아니고, 바꿀 대상 위치가 비어있고(0) 범위 내에 있는 것만 콜렉트
-            parallel_cells =[tuple(np.add(c, dr)) for c in all_cells if
-               c != cell and floorplan[tuple(np.add(c, dr))] == 0 and is_inside(floorplan, tuple(np.add(c, dr)))]
-
-            #색칠
-            floorplan[new_cell] = floorplan[cell]
-            update_active_cells(floorplan, cell, active_cells) # todo active_cells를 잘봐
-            update_active_cells(floorplan, new_cell, active_cells)
-
-            for c in parallel_cells:
-                floorplan[c] = floorplan[cell]
-                update_active_cells(floorplan, c, active_cells)
-
-        filename, current_step = trivial_utils.create_filename_in_order('png', 'Step', current_step)
-        GridDrawer.color_cells_by_value(floorplan, filename, display=display, save=save, num_rooms=num_rooms)
-
-    # floorplan = exchange_extreme_cells(floorplan)
-    filename, current_step = trivial_utils.create_filename_in_order('png', 'Reform', current_step)
-    GridDrawer.color_cells_by_value(floorplan, filename, display=display, save=save, num_rooms=num_rooms)
-    return floorplan
 
 # 색칠하지 말고 방향과 행렬 번호만 리턴하자.
 def parallel_extention2(floorplan, obtainable_cells, display=False, save=True, num_rooms=7):
-
     # todo 여기서는 그냥 choose만 하고, return 값은 새 셀의 좌표와 방향
     def choose_new_adjacent_cell(floorplan, cell):
         row, col = cell
@@ -712,12 +687,13 @@ def parallel_extention2(floorplan, obtainable_cells, display=False, save=True, n
                 # floorplan[row + dy, col + dx] = floorplan[row, col]  # Color the neighbor
                 return (row + dy, col + dx), dr
         else:
-            return None, (0,0)
+            return None, (0, 0)
+
     # 0인 neighbor가 없고 즉 더이상 확장할 수 없는데 그 셀이 actie_cells 리스트에 있으면 거기서 제거
     # 0인 네이버가 있으면 무조건 active cell에 추가
-    def update_active_cells(floorplan,cell, active_cells):
-        if not has_empty_neighbor(floorplan, cell[0], cell[1]): # not( has_neighbor_zero = 범위 안에 있고 0인 인접셀이 하나라도 있으면)
-            if cell in active_cells: # 그 셀은 더이상 active하지 않으므로 active_cells에서 제거하고
+    def update_active_cells(floorplan, cell, active_cells):
+        if not has_empty_neighbor(floorplan, cell[0], cell[1]):  # not( has_neighbor_zero = 범위 안에 있고 0인 인접셀이 하나라도 있으면)
+            if cell in active_cells:  # 그 셀은 더이상 active하지 않으므로 active_cells에서 제거하고
                 print(f'{cell} has not neighbor zero and in active_cells :why is this happening ')
                 active_cells.remove(cell)
         else:
@@ -725,7 +701,7 @@ def parallel_extention2(floorplan, obtainable_cells, display=False, save=True, n
 
         # 이 셀이 더이상 확장 가능하거나 가능하지 않거나 상관없이 모든 인접셀에 대해서 다시 candidate를 구한다. if 문에서 들어가면
         for adj_cell in all_active_neighbors(cell, floorplan):
-            if not len(collect_candidate_set(adj_cell, floorplan)) > 0:  # has no candidate
+            if not len(get_unassigned_neighbor_set(adj_cell, floorplan)) > 0:  # has no candidate
                 if adj_cell in active_cells:
                     active_cells.remove(adj_cell)
 
@@ -735,33 +711,35 @@ def parallel_extention2(floorplan, obtainable_cells, display=False, save=True, n
     valid_obtainable_cells = process_valid_cells(floorplan)
     current_step = 0
 
-    while len(valid_obtainable_cells) > 0 :
+    while len(valid_obtainable_cells) > 0:
         room_to_coordinates = dict_value_to_coordinates(floorplan)
         # todo 각 룸마다 하나씩 패러랠하게 추가
         # todo room_to_coordinates로 for 문을 돌리면 같은 셀로 계속 반복하게 됨
         #  coordinates는 나중에 룸 번호보고 다시 선택하기로 하고, iteration은 room 위에 while 문 필요함.
-        room_numbers = list(range(1, num_rooms+1))
+        room_numbers = list(range(1, num_rooms + 1))
         while room_numbers:
-        # for room, all_cells in room_to_coordinates.items():
+            # for room, all_cells in room_to_coordinates.items():
             room_idx = random.randrange(len(room_numbers))
             room = room_numbers.pop(room_idx)
             all_cells = room_to_coordinates[room]
             active_cells = valid_obtainable_cells.copy()
             # valid한  coordsnates를 찾아라
             current_active_cells = [c for c in all_cells if c in active_cells]
-            if len(current_active_cells) < 1 :
-                continue# 현재 선택된 방의 모든 valid한 셀
-            cell = random.choice(current_active_cells) #todo cannot choose from an empty sequence
+            if len(current_active_cells) < 1:
+                continue  # 현재 선택된 방의 모든 valid한 셀
+            cell = random.choice(current_active_cells)  # todo cannot choose from an empty sequence
             # just pick one from each cell
-            new_cell, dr = choose_new_adjacent_cell(floorplan, cell) # todo 이 버전은 값은 안변하고 셀만 구한다. 일단 간직만 하자. 변경하는 것은 나중에
+            new_cell, dr = choose_new_adjacent_cell(floorplan,
+                                                    cell)  # todo 이 버전은 값은 안변하고 셀만 구한다. 일단 간직만 하자. 변경하는 것은 나중에
             # assign_room
             # 바꾸려고 하는 셀이 원래셀이 아니고, 바꿀 대상 위치가 비어있고(0) 범위 내에 있는 것만 콜렉트
-            parallel_cells =[tuple(np.add(c, dr)) for c in all_cells if
-               c is not cell and floorplan[tuple(np.add(c, dr))] == 0 and is_inside(floorplan, tuple(np.add(c, dr)))]
+            parallel_cells = [tuple(np.add(c, dr)) for c in all_cells if
+                              c is not cell and floorplan[tuple(np.add(c, dr))] == 0 and is_inside(floorplan, tuple(
+                                  np.add(c, dr)))]
 
-            #색칠
+            # 색칠
             floorplan[new_cell] = floorplan[cell]
-            update_active_cells(floorplan, cell, active_cells) # todo active_cells를 잘봐
+            update_active_cells(floorplan, cell, active_cells)  # todo active_cells를 잘봐
             update_active_cells(floorplan, new_cell, active_cells)
 
             #  parallel_cells를 색칠하면 됨.
@@ -781,8 +759,9 @@ def parallel_extention2(floorplan, obtainable_cells, display=False, save=True, n
 
     return floorplan
 
+
 # commit된 것 복원 old_version. parallel_extension으로 대체
-def place_room(floorplan, obtainable_cells, display = False, save = True, num_rooms=7):
+def place_room(floorplan, obtainable_cells, display=False, save=True, num_rooms=7):
     insulated_cells = set()
     # todo .1 insulated_cell 을 이용하지 않았어
     # todo .2 obtainable_cells를 기껏 가져와서 process_valid_cells에서 다시 구했어. 아래 문장에서는  obtainable_cells와 insulated_cells를 모두 이용하지 않았어.
@@ -813,7 +792,7 @@ def place_room(floorplan, obtainable_cells, display = False, save = True, num_ro
                     insulated_cells.add(new_cell)
 
                 for adj_cell in all_active_neighbors(new_cell, floorplan):
-                    if not len(collect_candidate_set(adj_cell, floorplan)) > 0:  # has no candidate
+                    if not len(get_unassigned_neighbor_set(adj_cell, floorplan)) > 0:  # has no candidate
                         if adj_cell in active_cells:
                             active_cells.remove(adj_cell)
                         insulated_cells.add(adj_cell)
@@ -843,6 +822,13 @@ def place_room(floorplan, obtainable_cells, display = False, save = True, num_ro
     GridDrawer.color_cells_by_value(floorplan, filename, display=display, save=save, num_rooms=num_rooms)
 
     return floorplan
+#  현재 셀이 valid 한가
+def check_valid_current_cell(grid_assigning, cell):
+    row, col = cell[0], cell[1]
+    if not has_empty_neighbor(grid_assigning, row, col):
+        return False
+    return True
+
 
 
 def count_different_and_same_neighbors(floorplan, cell):
@@ -862,6 +848,7 @@ def count_different_and_same_neighbors(floorplan, cell):
                 same_count += 1
 
     return different_count, same_count
+
 
 # todo 이 짓은 의미기 없음 지우기는 하는데 나중에 무슨 쓸 일이 있는지 보자. 실제로 교환하는 게 같은 룸을 교환하는건데 이게 말이 되냐고
 def exchange_extreme_cells(floorplan):
@@ -940,7 +927,7 @@ def place_room2(floorplan, obtainable_cells):
                         insulated_cells.add(new_cell)
 
                     for adj_cell in all_active_neighbors(new_cell, floorplan):
-                        if not len(collect_candidate_set(adj_cell, floorplan)) > 0:  # has no candidate
+                        if not len(get_unassigned_neighbor_set(adj_cell, floorplan)) > 0:  # has no candidate
                             if adj_cell in active_cells:
                                 active_cells.remove(adj_cell)
                             insulated_cells.add(adj_cell)
@@ -965,6 +952,7 @@ def place_room2(floorplan, obtainable_cells):
     print(f'insulated_cells={insulated_cells}: total {len(insulated_cells)}')
     return floorplan
 
+
 def expand_room_with_square_shape(floorplan, cell):
     """
     선택된 셀을 기준으로 사각형 모양을 유지하면서 인접한 셀을 확장하는 함수
@@ -988,6 +976,7 @@ def expand_room_with_square_shape(floorplan, cell):
 
     return new_cells + additional_cells
 
+
 def expand_to_keep_square(floorplan, cell, new_cell):
     """
     사각형 모양을 유지하기 위해 추가 확장하는 함수.
@@ -1002,10 +991,10 @@ def expand_to_keep_square(floorplan, cell, new_cell):
     else:
         return None  # 확장이 불가능한 경우
 
-    if 0 <= additional_row < floorplan.shape[0] and 0 <= additional_col < floorplan.shape[1] and floorplan[additional_row, additional_col] == 0:
+    if 0 <= additional_row < floorplan.shape[0] and 0 <= additional_col < floorplan.shape[1] and floorplan[
+        additional_row, additional_col] == 0:
         return (additional_row, additional_col)
     return None
-
 
 
 def choose_adjacent_cells_for_shape(floorplan, cell):
@@ -1078,23 +1067,6 @@ def find_closest_pairs(room_cell_dict):
     return distances
 
 
-def place_seed(grid_arr, k, adjacency_graph = None):
-    # Randomly place k rooms within the floorplan
-    rooms_placed = 0
-    cells_coords = set()
-    rooming_grid = grid_arr.copy()
-    m, n = grid_arr.shape
-
-    while rooms_placed < k:
-        row, col = random.randint(0, m - 1), random.randint(0, n - 1)
-        if rooming_grid[row, col] == 0:  # Ensure the cell is within the floorplan and unroomed
-            rooms_placed += 1
-            rooming_grid[row, col] = 255   # 방을 표시하기 위해 값을 1로 설정
-            cells_coords.add((row, col))  # 셀의 위치를 저장
-
-    return rooming_grid, cells_coords
-
-
 def is_position_correct(cell_positions, color, position, orientation_requirements):
     row, col = position
     orientation = orientation_requirements[color]
@@ -1114,18 +1086,20 @@ def is_position_correct(cell_positions, color, position, orientation_requirement
             return False
     return True
 
+
 def swap_positions(grid, pos1, pos2):
     grid[pos1[0], pos1[1]], grid[pos2[0], pos2[1]] = grid[pos2[0], pos2[1]], grid[pos1[0], pos1[1]]
 
+
 def find_extreme_positions(cells_coords):
     minx = min(pos[0] for pos in cells_coords.values())
-    norths ={room_no:pos for room_no, pos in cells_coords.items() if pos[0] == minx}
+    norths = {room_no: pos for room_no, pos in cells_coords.items() if pos[0] == minx}
     maxx = max(pos[0] for pos in cells_coords.values())
-    souths ={room_no:pos for room_no, pos in cells_coords.items() if pos[0] == maxx}
+    souths = {room_no: pos for room_no, pos in cells_coords.items() if pos[0] == maxx}
     miny = min(pos[1] for pos in cells_coords.values())
-    wests ={room_no:pos for room_no, pos in cells_coords.items() if pos[1] == miny}
+    wests = {room_no: pos for room_no, pos in cells_coords.items() if pos[1] == miny}
     maxy = max(pos[1] for pos in cells_coords.values())
-    easts ={room_no:pos for room_no, pos in cells_coords.items() if pos[1] == maxy}
+    easts = {room_no: pos for room_no, pos in cells_coords.items() if pos[1] == maxy}
 
     return norths, souths, wests, easts
 
@@ -1189,6 +1163,7 @@ def relocate_by_orientation_and_adjacency(grid, cell_positions, orientation_requ
 
     return new_grid, cell_positions
 
+
 def relocate_by_orientation(grid, cell_positions, orientation_requirements):
     def find_extreme_positions(cell_positions):
         # 각 방향에서 가장 극단적인 위치를 찾는 함수
@@ -1219,9 +1194,11 @@ def relocate_by_orientation(grid, cell_positions, orientation_requirements):
 
     return new_grid, cell_positions
 
+
 import random
 
 import numpy as np
+
 
 def relocate_by_adjacency(grid, cell_positions, adjacency_requirements):
     m, n = grid.shape
@@ -1301,7 +1278,6 @@ def relocate_by_orientation_and_adjacency(grid, cell_positions, orientation_requ
             # 만약 pos가 이미 제거된 위치라면, 루프가 계속되어 다음 위치를 시도합니다.
 
 
-
 def to_adj_dict(adjacency_requirements):
     # 결과 딕셔너리 초기화
     adjacency_dict = {}
@@ -1317,6 +1293,7 @@ def to_adj_dict(adjacency_requirements):
 
     return adjacency_dict
 
+
 # todo important: why not just assign random 8 position and later decide room_id
 def to_np_array(grid):
     m, n = len(grid), len(grid[0]) if grid else 0
@@ -1324,10 +1301,10 @@ def to_np_array(grid):
     return np.where(np.array(grid) == 1, 0, -1)
 
 
-
 # NumPy 대신 Scipy의 희소 행렬 사용
 def create_sparse_grid(rows, cols):
     return lil_matrix((rows, cols), dtype=int)
+
 
 # cell의 네 방향을 탐색해서 범위에 있고 0이면 선택하고 색깔까지 칠한다.
 def choose_new_adjacent_cell(floorplan, cell):
@@ -1350,29 +1327,6 @@ def choose_new_adjacent_cell(floorplan, cell):
 
 import numpy as np
 from multiprocessing import Pool
-
-
-def process_valid_cells(grid_assigning, insulated_cells=None, row_range=None): # 두 개의 parameter가 필요없어서 기본값을 None으로 주었음
-    valid_cells = set()
-    #    print(f'insulated_cells={insulated_cells} in process_valid_cells')
-    for row in range(grid_assigning.shape[0]):
-        for col in range(grid_assigning.shape[1]):
-            # if grid_assigning[row, col] > 0 and grid[row][col] == 1:
-            if grid_assigning[row, col] > 0:
-                if has_empty_neighbor(grid_assigning, row, col):
-                    valid_cells.add((row, col))
-    return valid_cells
-
-
-# 범위 내에 있고 옆에 하나라도 빈 셀이 있으면 True
-def has_empty_neighbor(grid_assigning, row, col):
-    directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
-    for dy, dx in directions:
-        new_row, new_col = row + dy, col + dx
-        if 0 <= new_row < grid_assigning.shape[0] and 0 <= new_col < grid_assigning.shape[1]:
-            if grid_assigning[new_row, new_col] == 0:
-                return True
-    return False
 
 
 # wrapper of process_valid_cells for multiprocessing
@@ -1449,7 +1403,7 @@ def exe_build_floorplan():
         [1, 1, 1, 1, 1]
     ]
     reqs = Req()
-    grid = create_floorplan(m, n, k, floorshape,reqs)
+    grid = create_floorplan(m, n, k, floorshape, reqs)
     color_grid = plan_utils.get_color_coordinates(grid)
     savepath = 'output.png'
     GridDrawer.draw_grid_reversed(color_grid, savepath)
@@ -1467,6 +1421,5 @@ def main():
         modules[choice]()
     exe_build_floorplan()
 
-
 # if __name__ == '__main__':
-    # main()
+# main()

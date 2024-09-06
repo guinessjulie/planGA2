@@ -12,7 +12,7 @@ from simplify import exchange_protruding_cells, count_cascading_cells
 from trivial_utils import generate_unique_id
 
 # info 이 클라스는  list of dictionary {seed : list of tuple (floorplans:fitness)} 를 갖는다.
-class Floorplan:
+class FloorplanLogic:
     def __init__(self, num_rooms):
         self.init_grid = self.get_initial_footprint_grid() # todo footprint
         self.num_rooms = num_rooms #info use options.num_rooms or count from cell
@@ -25,32 +25,37 @@ class Floorplan:
         self.candidates = []
         self.simplified_candidates = []
         self.simplified_floorplan = None
-        self.initial_cells = None
+        self.seeds_coords = None
         self.fit = None
         self.path = trivial_utils.create_folder_by_datetime()
         self.option = None
 
     # 여기에 Floorplan 관련 로직을 넣음
-    # 예: initialize_room_location, initialize_floorplan, draw_floorplan_menu 등
+    # 예: create_room_start_cell, initialize_floorplan, draw_floorplan_menu 등
 
     def get_initial_footprint_grid(self): # create_sample_init_grid(self):  from main_ui
         # 임시 예제 데이터
         grid = constants.floor_grid
         return expand_grid(grid)
 
+    # info: from FloorplanApp Menu [batch processing] >
+    #  FloorplanApp.seed = FloorplanApp.initialize_location >
+    #  Floorplan.seed = floorplan.locate_initial_cell >
+    #  seed, seeds_coords = plan.locate_initial_cell
     def locate_initial_cell(self, num_rooms):
         if self.init_grid is not None:
-            self.seed, self.initial_cells = locate_initial_cell(self.init_grid, num_rooms)
-            return self.seed
+            self.seed, self.seeds_coords, assgigned_seed_by = locate_initial_cell(self.init_grid, num_rooms) #todo self.seed가 여기서 필요한지 안필요한지 모름
+            return self.seed, assgigned_seed_by
         else:
             return None
-
-    def iterate_for_optimal_floorplans(self, num_iter): # 이미 silence 모드인지 확인해서 넘겨줬음
-
+    # info FloorplanApp.create_floorplans_from_seed() > floorplan.iterate_for_optimal_floorplan
+    # uses local variables
+    # todo iterate for a given seed
+    def iterate_floorplan_creation(self, seed, num_iter):  # 이미 silence 모드인지 확인해서 넘겨줬음
         floorplans = []
         for i in range(num_iter):
-            initial_floorplan = create_floorplan(self.seed, k=self.num_rooms, options=self.options, reqs=self.reqs)
-            simplified_floorplan, fit = self.get_best_simplified_floorplan(initial_floorplan)            
+            initial_floorplan = create_floorplan(seed, k=self.num_rooms, options=self.options, reqs=self.reqs)
+            simplified_floorplan, fit = self.get_best_simplified_floorplan(initial_floorplan)
             floorplans.append((simplified_floorplan, fit))
 
         # average_fitness_label on label
@@ -66,7 +71,36 @@ class Floorplan:
         best_fit_result = f'Best Fitness Result\n' + self.create_fitness_info(best_fit)
 
         room_areas = [room.area for room in best_fit.room_polygons.values()]
+        seed_set = {tuple(el) for el in np.argwhere(self.floorplan.seed > 0)} # todo remove redundancy
+        unique_id = generate_unique_id(seed_set)
+        self.floorplans_dict[unique_id] = floorplans
 
+        return floorplans, average_text_result, best_fit_result, best_fit_floorplan, room_areas  # todo 일단 10 개의 floorplans가 return, best_fit을 가진 floorplan을 return 하게 될 수도 있다. 먼저 작동 확인하자.
+
+    def iterate_optimal_floorplans(self, seed, num_iter): # 이미 silence 모드인지 확인해서 넘겨줬음
+
+        floorplans = []
+        for i in range(num_iter):
+            initial_floorplan = create_floorplan(seed, k=self.num_rooms, options=self.options, reqs=self.reqs)
+            simplified_floorplan, fit = self.get_best_simplified_floorplan(initial_floorplan)
+            floorplans.append((simplified_floorplan, fit))
+
+        # average_fitness_label on label
+        fits = [fl[1] for fl in floorplans]  # 모든 fitness들을 가져와서
+        average_text_result = self.generate_average_fitness_text(fits)
+        average_text_result = f'Average Fitness Result \n {average_text_result}'
+
+        # best_fitness_label on best_fitness_label
+        avg_fits = [fit.fitness for fit in fits]
+        best_fits_index = np.argmax(avg_fits)
+        best_fit = floorplans[best_fits_index][1]
+        best_fit_floorplan = floorplans[best_fits_index][0]
+        best_fit_result = f'Best Fitness Result\n' + self.create_fitness_info(best_fit)
+
+        room_areas = [room.area for room in best_fit.room_polygons.values()]
+        seed_set = {tuple (el) for el in np.argwhere(seed > 0)}
+        unique_id = generate_unique_id(seed_set)
+        self.floorplans_dict[unique_id] = floorplans
         return floorplans, average_text_result, best_fit_result, best_fit_floorplan, room_areas  # todo 일단 10 개의 floorplans가 return, best_fit을 가진 floorplan을 return 하게 될 수도 있다. 먼저 작동 확인하자.
 
     def generate_average_fitness_text(self,fits):
@@ -181,6 +215,7 @@ class Floorplan:
         fitness_result = "\n".join([f"{key}: {value:.2f}" for key, value in fitness_values.items()])
 
         return fitness_result
+    # cascading_cell이 0이면
     def create_candidate_floorplans(self, initial_floorplan):
         min_cas = np.sum(initial_floorplan >= 1)  # cascading_cell의 최대 갯수
         num_cas = min_cas
@@ -192,9 +227,10 @@ class Floorplan:
         while num_cas != 0 and iteration_count < max_iterations:
             candidate = exchange_protruding_cells(initial_floorplan, 10)  # todo check iteration count in exchange_...
             candidate_cas, _ = count_cascading_cells(candidate)
+            num_cas = candidate_cas
             # print(f'num_cascading_cell = {candidate_cas}')
 
-            if candidate_cas < min_cas:  #
+            if candidate_cas < min_cas:
                 candidates.append(candidate)
                 min_cas = candidate_cas
                 num_cas_dict[len(candidates) -1] = candidate_cas

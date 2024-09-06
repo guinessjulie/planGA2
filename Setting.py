@@ -570,26 +570,34 @@ class SettingsApp:
         self.constraints.set(section, "adjacent", str(adjacency_list))
 
     def save_settings(self):
+        # RoomNames, Orientation, Size, Adjacency 등 기타 섹션을 저장하는 로직
         self.save_orientation_requirements()
         self.save_size_requirements()
         self.save_adjacency_requirements()
         self.save_room_names()
+
+        # 그 외의 섹션 (RoomNames를 제외한 모든 섹션)
+        for section, items in self.sections.items():
+            for key, entry in items.items():
+                value = entry.get()
+                self.config.set(section, key, value)
 
         write_ini_file(self.config, 'config.ini')
         write_ini_file(self.constraints, 'constraints.ini')
         messagebox.showinfo("Settings", "Settings saved successfully!")
 
 
-    def update_room_name(self, room_number_label, room_name_var):
-        """방 이름이 변경될 때 호출되는 이벤트 핸들러"""
-        room_number = room_number_label.cget("text")
-        room_name = room_name_var.get().strip()
-        section = "RoomNames"
-        if room_number and room_name:
-            self.config.set(section, room_number, room_name)
-        else:
-            if room_number in self.config[section]:
-                del self.config[section][room_number]
+
+        def update_room_name(self, room_number_label, room_name_var):
+            """방 이름이 변경될 때 호출되는 이벤트 핸들러"""
+            room_number = room_number_label.cget("text")
+            room_name = room_name_var.get().strip()
+            section = "RoomNames"
+            if room_number and room_name:
+                self.config.set(section, room_number, room_name)
+            else:
+                if room_number in self.config[section]:
+                    del self.config[section][room_number]
 
 def main():
     root = tk.Tk()

@@ -275,8 +275,8 @@ class GridDrawer:
         # get  the scale
         scale = 1000  # 1 unit = 1000mm
         wall_thickness = 5  # Wall thickness in mm
-        scale = read_config_int('constraints.ini','Metrics',  'scale')
-        wall_thickness = read_config_int('constraints.ini','Metrics','wall_thickness')
+        scale = read_config_int('config.ini','Metrics',  'scale')
+        wall_thickness = read_config_int('config.ini','Metrics','wall_thickness')
 
         # Create a plot
         fig, ax = plt.subplots()
@@ -471,7 +471,7 @@ class GridDrawer:
         plt.close()
 
     @staticmethod
-    def color_cells_by_value(grid, filename, text=None, display=True, save=True, num_rooms = 5):
+    def color_cells_by_value(grid, filename, text=None, display=True, save=True, num_rooms = 8):
 
         # Function to generate boundaries based on the number of rooms
         def generate_boundaries(num_rooms):

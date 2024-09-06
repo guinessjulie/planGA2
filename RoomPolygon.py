@@ -66,6 +66,8 @@ class RoomPolygon:
         return 4 / vertex_count
 
     def calc_rectangularity(self): # todo _corners 값이 바뀌어도 실행이 되는지 확인
+        if self.bb.area < self.area:
+            print(f'something wrong bb.area:{self.bb.area} < area:{self.area}')
         return self.area / self.bb.area if self.bb.area != 0 else float('inf')
 
     # todo _corners 값이 바뀌어도 실행이 되는지 확인

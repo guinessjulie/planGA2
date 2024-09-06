@@ -15,7 +15,9 @@ from GridPolygon import GridPolygon
 from options import Options
 from PolygonExporter import PolygonExporter
 from ga import GeneticAlgorithm
-from floorplan import Floorplan
+from floorplanlogic import FloorplanLogic
+
+from reqs import Req
 from config_reader import load_config
 import configparser
 # Press Ctrl+F5 to execute it or replace it with your code.
@@ -31,7 +33,7 @@ class FloorplanApp:
         self.root = root
         self.root.title("Floorplan UI")
         self.options = Options()
-        self.floorplan = Floorplan(self.options.num_rooms)
+        self.FL = FloorplanLogic(self.options.num_rooms)
         self.create_widgets()
 
 
@@ -60,9 +62,10 @@ class FloorplanApp:
 
         # 버튼 리스트
         buttons = [
-            ("Initial Room Location", self.initialize_room_location),
+            # ("Initial Room Location", self.create_room_start_cell),
             # ("Batch Processing", self.get_optimal_from_initial_floorplan), todo 이걸로 바꾸려고 했는데 왜 바꾸려고 했는지를 다시 알아내야 함
-            ("Batch Processing", self.run_batch_from_seed),
+            ("Create Initial Plans", self.run_batch_from_seed),
+            ("Method Analysis", self.method_comparison_analysis),
             ("Evolve", self.evolve),
             # ('Create Floorplan', self.initialize_floorplan),
             # ("Simplify Floorplan", self.exchange_cells),
@@ -112,6 +115,121 @@ class FloorplanApp:
         self.ok_button.pack(side=tk.BOTTOM, pady=20)
         self.ok_button.config(state=tk.DISABLED)  # 첫 시작에는 비활성화
 
+    # info Menu event from: [Create Initial Population]
+    def run_batch_from_seed(self):
+        seed = self.create_room_start_cell()
+        if self.options.silence_mode: # todo App에서 options를 가지고 있어야 하냐 한다. 여기서 가지고 Floorplan에 넘겨주자
+            self.create_floorplans_from_seed(seed)
+        else:
+            self.run_iteration()
+
+    def create_column_title(self, assigned_seed_by):
+        constr = []
+        if self.options.min_size_alloc:
+            constr.append('size')
+        for cons in assigned_seed_by:
+            constr.append(cons)
+        return constr
+
+    def method_comparison_analysis(self):
+        num_iter_for_seed = 10
+        num_rooms = self.options.num_rooms
+        reqs = Req()
+        savefilename = trivial_utils.create_filename_with_datetime(ext='csv', prefix='Analysis')
+        for i in range(100):
+            seed, assigned_seed_by = self.create_room_start_cell()  # 이 부분에서 assigned_seed_by가 바뀜
+            n_iter = self.options.iteration_from_seed
+
+            fl_fit = []  # 이 안에서 fl_fit 초기화
+            for j in range(num_iter_for_seed):
+                initial_floorplan = create_floorplan(seed, k=num_rooms, options=self.options, reqs=reqs)
+
+                # Optimal candidates 처리
+                optimal_candidates = self.FL.create_candidate_floorplans(initial_floorplan)
+
+                # 각 floorplan에 대해 fitness 계산
+                for fl in optimal_candidates:
+                    grid_polygon = GridPolygon(fl)
+                    fit = Fitness(fl, num_rooms, grid_polygon.room_polygons, reqs)
+                    fl_fit.append(fit)
+
+            # 매번 assigned_seed_by가 변할 때마다 데이터 저장
+            constraints = self.create_column_title(assigned_seed_by)
+            trivial_utils.save_results_to_csv(fl_fit,  constraints=constraints, filename = savefilename)  # 여기서 CSV 파일에 저장
+
+    def create_column_title_str(self, assigned_seed_by):
+        title = 'Size ' if self.options.min_size_alloc else ''
+        for cons in assigned_seed_by:
+            title += cons
+        title = 'None' if title == '' else title
+        return title
+
+    def create_column_title(self, assigned_seed_by):
+        constr = []
+        # Size constraint 추가 여부
+        constr.append('Size' if self.options.min_size_alloc else 'None')
+
+        # 다른 constraint 추가 (예: assigned_seed_by 리스트에 있는 제약 조건)
+        for cons in assigned_seed_by:
+            constr.append(cons)
+
+        # 리스트 길이를 3으로 맞추고, 부족하면 'None'으로 채우기
+#         while len(constr) < 3:
+#             constr.append('None')
+
+        return constr
+
+    def method_comparison_analysis_일단_세이브(self): # copied and joined from run_batch_from_seed > create_floorplans_from_seed
+            num_iter_for_seed = 5
+            num_rooms = self.options.num_rooms
+            reqs = Req()
+            fl_fit = []
+            assigned_seed_by = []
+            for i in range(10):
+                seed, assigned_seed_by = self.create_room_start_cell()
+                n_iter = self.options.iteration_from_seed
+
+                for i in range(num_iter_for_seed):
+                    initial_floorplan = create_floorplan(seed, k=num_rooms, options=self.options, reqs=reqs)
+                    # simplified_floorplan, fit = self.FL.get_best_simplified_floorplan(initial_floorplan) # underway 0905  이 내용이 아래에 다시 썼다.
+                    optimal_candidates = self.FL.create_candidate_floorplans(initial_floorplan) # 여러개
+
+                    fitnesses = {}
+                    for i, fl in enumerate(optimal_candidates):
+                        grid_polygon = GridPolygon(fl)
+                        # info what self.get_fitness() does
+                        fit = Fitness(fl, num_rooms, grid_polygon.room_polygons, reqs)
+                        fl_fit.append((fl,fit))
+            col_title = self.create_column_title_str(assigned_seed_by)
+            fits = [flt[1] for flt in fl_fit]
+            # create colum title
+            trivial_utils.save_results_to_csv(fits, constraint = col_title, filename=".csv")
+
+
+    def compare_methods(num_iterations=100, config_file='config.ini', constraints_file='constraints.ini'):
+        """
+        Compare two methods: `allocate_rooms` and `allocate_rooms_with_size` over a number of iterations.
+        """
+        results = []
+
+        for _ in range(num_iterations):
+            # Allocate floorplan using `allocate_rooms`
+            initial_floorplan1 = allocate_rooms(
+                floorplan_template)  # Modify according to how allocate_rooms is called
+            best_floorplan1, fitness1 = get_optimal_from_initial_floorplan(initial_floorplan1)
+            results.append(('allocate_rooms', fitness1))
+
+            # Allocate floorplan using `allocate_rooms_with_size`
+            initial_floorplan2 = allocate_rooms_with_size(
+                floorplan_template)  # Modify according to how allocate_rooms_with_size is called
+            best_floorplan2, fitness2 = get_optimal_from_initial_floorplan(initial_floorplan2)
+            results.append(('allocate_rooms_with_size', fitness2))
+
+        # Save results to CSV
+        save_results_to_csv(results)
+
+        print(f"Comparison complete. Results saved to 'floorplan_fitness_results.csv'.")
+
     def show_plot_on_canvas(self, fig, target_canvas):
         for widget in target_canvas.winfo_children():
             widget.destroy()
@@ -121,19 +239,20 @@ class FloorplanApp:
         plt.close(fig)
 
     def return_floorplan(self):
-        if self.floorplan:
-            self.callback(self.floorplan)
+        if self.FL:
+            self.callback(self.FL)
             self.root.destroy()
         else:
             messagebox.showwarning("Warning", "Create the floorplan first")
+    # info run_batch_from_seed
+    def create_room_start_cell(self):
 
-    def initialize_room_location(self):
-
-        self.seed = self.floorplan.locate_initial_cell(self.options.num_rooms)
-        if self.seed is not None:
-            self.draw_on_canvas(self.seed, self.initial_canvas)
+        seed, assigned_seed_by = self.FL.locate_initial_cell(self.options.num_rooms) # todo remove self.seed
+        if seed is not None:
+            self.draw_on_canvas(seed, self.initial_canvas)
         else:
             messagebox.showwarning('Error', 'init_grid is not given')
+        return seed, assigned_seed_by
 
     # todo 1. create_floorplan =>
     #  2. simplified until no cascading exists. or max 5 times with same_cascading number => Done
@@ -142,19 +261,13 @@ class FloorplanApp:
     #  5. batch fitnesses for all floorplans of one seed
     #  6. keep track of finnesses of the seed
 
-    # underway: 1.  일단 running 하는지 확인
-    def run_batch_from_seed(self):
-        self.initialize_room_location()
-        num_iter = self.options.iteration_from_seed
-        # underway: move this logic to Floorplan Class
-        if self.options.silence_mode: # todo App에서 options를 가지고 있어야 하냐 한다. 여기서 가지고 Floorplan에 넘겨주자
-            self.run_iteration_silence()
-        else:
-            self.run_iteration()
 
-    def run_iteration_silence(self): # underway ok button이 있기 때문에 이 작업은 여기서해야 한다ㅣ 내부 작업만 Foorplan class로 Move
+    # info FloorplanApp.run_batch_from_seed >
+    #  create_floorplans_from_seed(seed)
+    def create_floorplans_from_seed(self, seed):
+        n_iter = self.options.iteration_from_seed
+        floorplans, average_text_result, best_fit_result, best_fit_floorplan, room_areas  = self.FL.iterate_optimal_floorplans(seed, n_iter) # 여기서 10번 함
 
-        floorplans, average_text_result, best_fit_result, best_fit_floorplan, room_areas  = self.floorplan.iterate_for_optimal_floorplans(self.options.iteration_from_seed) # 여기서 10번 함
         self.fitness_label.config(text=average_text_result)
         self.best_fitness_label.config(text = best_fit_result)
         self.ok_button.config(state=tk.DISABLED)
@@ -166,8 +279,8 @@ class FloorplanApp:
         self.simplified_candidates.clear()
         if self.seed is not None:
             floorplan = create_floorplan(self.seed, k = self.num_rooms, options= self.options, reqs = self.reqs) # todo to change plan.create_floorplan
-            if self.floorplan is not None:
-                self.draw_on_canvas(self.floorplan, self.final_canvas)
+            if self.FL is not None:
+                self.draw_on_canvas(self.FL, self.final_canvas)
             else:
                 messagebox.showwarning('Error', 'Initialize_room_location First. No possible seed for Adjacency Constraint')
         else:
@@ -201,8 +314,8 @@ class FloorplanApp:
 
     # underway rectangularity 확인
     def exchange_cells(self):
-        if self.floorplan is not None:
-            self.simplified_floorplan = exchange_protruding_cells(self.floorplan, 10)
+        if self.FL is not None:
+            self.simplified_floorplan = exchange_protruding_cells(self.FL, 10)
             self.simplified_candidates.append(self.simplified_floorplan)
             self.draw_on_canvas(self.simplified_floorplan, self.final_canvas)
         else:
@@ -212,8 +325,8 @@ class FloorplanApp:
 
 
     def build_polygon(self):
-        if self.floorplan is not None:
-            grid_polygon = GridPolygon(self.floorplan) #todo get scale from constraints.ini
+        if self.FL is not None:
+            grid_polygon = GridPolygon(self.FL) #todo get scale from constraints.ini
             self.room_polygons = grid_polygon.room_polygons
             polygon_exporter = PolygonExporter(grid_polygon.cell_size, grid_polygon.padded_grid.shape, padding_size=1000)
 
@@ -233,8 +346,9 @@ class FloorplanApp:
 
     def evolve(self):
         # GeneticAlgorithm에 population 전달
-        ga = GeneticAlgorithm(list(self.floorplans_dict.values()))
-        ga.run(num_generations=50, population_size=10, mutation_rate=0.01)
+        ga = GeneticAlgorithm(list(self.FL.floorplans_dict.values()))
+
+        ga.run(num_generations=2, population_size=10, mutation_rate=0.01)
 
 
 
@@ -369,7 +483,7 @@ class FloorplanApp:
 
 
     def build_graph(self):
-        if self.floorplan is not None:
+        if self.FL is not None:
             build_modules = {
                 "1": GraphBuilder.build_graph,
                 "2": GraphBuilder.build_weighted_graph,
@@ -377,7 +491,7 @@ class FloorplanApp:
                 "4": GraphBuilder.build_graph_connect_4way,
                 "9": exit_module
             }
-            self.graph = run_selected_module(build_modules, self.floorplan)
+            self.graph = run_selected_module(build_modules, self.FL)
             messagebox.showinfo("Info", "Graph built")
         else:
             messagebox.showwarning("Warning", "Load floorplan first")
