@@ -132,27 +132,6 @@ class Fitness:
         size_satisfaction = total_score / total_req_rooms
         return size_satisfaction
 
-    def cell_adjacent_graph_for_rooms(self, grid):
-        rows, cols = grid.shape
-        adjGraphs = {}  # 숫자별로 그래프를 저장할 딕셔너리
-
-        # 모든 좌표에 대해 그래프 생성
-        for x in range(rows):
-            for y in range(cols):
-                room_type = grid[x, y]
-                if room_type == -1:  # -1은 방이 아니므로 무시
-                    continue
-
-                # 현재 방의 그래프가 없으면 초기화
-                if room_type not in adjGraphs:
-                    adjGraphs[room_type] = {}
-
-                curCell = (x, y)
-                adjs = self.adjacent_four_way(curCell, rows, cols)
-                child = [adj for adj in adjs if grid[adj[0], adj[1]] == room_type]
-                adjGraphs[room_type][curCell] = child
-
-        return adjGraphs
 
     def adjacent_four_way(self, loc, rows, cols):
         x, y = loc
@@ -253,3 +232,26 @@ def main():
 
 # if __name__ == '__main__':
     # main()
+
+
+    def cell_adjacent_graph_for_rooms(self, grid):
+        rows, cols = grid.shape
+        adjGraphs = {}  # 숫자별로 그래프를 저장할 딕셔너리
+
+        # 모든 좌표에 대해 그래프 생성
+        for x in range(rows):
+            for y in range(cols):
+                room_type = grid[x, y]
+                if room_type == -1:  # -1은 방이 아니므로 무시
+                    continue
+
+                # 현재 방의 그래프가 없으면 초기화
+                if room_type not in adjGraphs:
+                    adjGraphs[room_type] = {}
+
+                curCell = (x, y)
+                adjs = self.adjacent_four_way(curCell, rows, cols)
+                child = [adj for adj in adjs if grid[adj[0], adj[1]] == room_type]
+                adjGraphs[room_type][curCell] = child
+
+        return adjGraphs

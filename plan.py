@@ -343,11 +343,103 @@ def create_floorplan(initialized_grid, k, options, reqs=None):
     return floorplan
 
 
+def allocate_room_with_size(floorplan, display=False, save=True, num_rooms=8, reqs=None):
+    print(f'allocate_room_with_size')
+
+    def choose_new_adjacent_cell(floorplan, cell):
+        row, col = cell
+        rows, cols = floorplan.shape
+        if floorplan[row, col] > 0:
+            valid_offsets = [(dy, dx) for dy, dx in [(-1, 0), (1, 0), (0, -1), (0, 1)]
+                             if 0 <= row + dy < rows and 0 <= col + dx < cols and floorplan[row + dy, col + dx] == 0]
+            if valid_offsets:
+                dr = random.choice(valid_offsets)
+                return (row + dr[0], col + dr[1]), dr
+        return None, (0, 0)
+
+    def update_active_cells(floorplan, cell, active_cells):
+        if not has_empty_neighbor(floorplan, cell[0], cell[1]):
+            if cell in active_cells:
+                active_cells.remove(cell)
+        else:
+            active_cells.add(cell)
+
+        for adj_cell in all_active_neighbors(cell, floorplan):
+            if not len(get_unassigned_neighbor_set(adj_cell, floorplan)) > 0:
+                if adj_cell in active_cells:
+                    active_cells.remove(adj_cell)
+
+    def is_inside(floorplan, coord):
+        """Check if the given coordinate is inside the bounds of the floorplan."""
+        rows, cols = floorplan.shape
+        return 0 <= coord[0] < rows and 0 <= coord[1] < cols
+
+    active_cells = process_valid_cells(floorplan)
+    current_step = 0
+
+    # 방의 현재 면적을 추적하기 위한 딕셔너리
+    room_areas = {room_id: np.sum(floorplan == room_id) for room_id in range(1, num_rooms + 1)}
+    max_area_exceeded = set()  # 최대 면적을 초과한 방의 번호를 저장할 집합
+    expandable_rooms = set(range(1, num_rooms + 1))  # 확장 가능한 방을 추적하기 위한 집합
+    num_iter = 0
+
+    while active_cells and expandable_rooms:
+        #if len(expandable_rooms) == 1:
+        #    room_id = expandable_rooms.pop()
+        #    # if not is_room_split(floorplan, room_id):  # underway to fix splitting rooms
+        #    if not is_room_split(floorplan, 0):  # 한 덩어리인데, assign할 방이 하나 남아있다는 소리
+        #        fill_empty_cell_with_value(floorplan, room_id)  # 나머지 모든 방을 다 assign하고 floorplan을 리턴
+        #        return floorplan
+        num_iter += 1
+
+        # print(f'iter={num_iter} Active cells length: {len(active_cells)}') info to debug to avoid infinite loop
+        room_to_coordinates = dict_value_to_coordinates(floorplan)
+        room_numbers = [room for room in expandable_rooms if room not in max_area_exceeded] # todo 그 때 그 때 저장하는 게 어때? 매번 하지 않도록 변경
+
+        if not room_numbers:
+            break
+
+        room_idx = random.choice(room_numbers)
+        room = room_idx
+        all_cells = room_to_coordinates.get(room, [])
+        current_active_cells = [c for c in all_cells if c in active_cells]
+
+        if not current_active_cells:
+            expandable_rooms.remove(room)
+            continue
+
+        cell = random.choice(current_active_cells)
+
+        # 현재 방의 면적이 최대 면적을 초과했는지 확인
+        if reqs is None:
+            reqs = Req()
+        min_area, max_area = reqs.get_area_range(room)
+        if max_area is not None and room_areas[room] >= max_area:
+            max_area_exceeded.add(room)  # 방을 더 이상 확장하지 않도록 집합에 추가
+            expandable_rooms.remove(room)  # 이 방은 더 이상 확장할 수 없으므로 expandable_rooms에서 제거
+            continue
+
+        new_cell, dr = choose_new_adjacent_cell(floorplan, cell)
+        if new_cell is None:
+            expandable_rooms.remove(room)  # 새로운 셀이 없으면 확장 불가능하므로 제거
+            continue
+
+        # 방이 나뉘지 않도록 중복 처리
+        if not is_room_split(floorplan, room):
+            floorplan[new_cell] = floorplan[cell]
+            room_areas[room] += 1
+            update_active_cells(floorplan, cell, active_cells)
+            update_active_cells(floorplan, new_cell, active_cells)
+
+    floorplan = fill_unassigned_cells(floorplan)
+    return floorplan
+
+
 
 # info adj와 orientation Requirement는 place_seed에서 처리, size는 allocate_room_with_size 에서 처리
 #  structure App.create_floorplan_from_seed > Floorplan.iterate_optimal_floorplans
 #  > plan.create_floorplan > allocate_rooms_with_size
-def allocate_room_with_size(floorplan, display=False, save=True, num_rooms=8, reqs=None):
+def allocate_room_with_size_save(floorplan, display=False, save=True, num_rooms=8, reqs=None):
     print(f'allocate_room_with_size')
     def choose_new_adjacent_cell(floorplan, cell):
         row, col = cell
@@ -456,6 +548,7 @@ def allocate_room_with_size(floorplan, display=False, save=True, num_rooms=8, re
     # GridDrawer.color_cells_by_value(floorplan, filename, display=display, save=save, num_rooms=num_rooms)# info to see process take comment off
     return floorplan
 
+# 여기가 문제였다.
 def fill_empty_cell_with_value(floorplan, room_id):
     # 빈 셀 채우기: 할당되지 않은 셀에 인접한 셀의 방 번호를 할당
     empty_cells = {tuple(x) for x in np.argwhere(floorplan == 0)}  # 빈 셀들의 좌표 리스트
@@ -641,7 +734,6 @@ def fill_unassigned_cells(floorplan):
 
         # 더 이상 채울 수 있는 셀이 없으면 루프 종료
         if not any_cell_filled:  # empty_cell이 비어서 iteration을 하지 못했거나, valid한 인접 방이 없어서 아무것도 못한 경우
-            print("No more cells can be filled.")
             break
 
     return floorplan
@@ -694,7 +786,7 @@ def parallel_extention2(floorplan, obtainable_cells, display=False, save=True, n
     def update_active_cells(floorplan, cell, active_cells):
         if not has_empty_neighbor(floorplan, cell[0], cell[1]):  # not( has_neighbor_zero = 범위 안에 있고 0인 인접셀이 하나라도 있으면)
             if cell in active_cells:  # 그 셀은 더이상 active하지 않으므로 active_cells에서 제거하고
-                print(f'{cell} has not neighbor zero and in active_cells :why is this happening ')
+                # print(f'{cell} has not neighbor zero and in active_cells :why is this happening ')
                 active_cells.remove(cell)
         else:
             active_cells.add(cell)
@@ -747,7 +839,7 @@ def parallel_extention2(floorplan, obtainable_cells, display=False, save=True, n
             for c in parallel_cells:
                 floorplan[c] = floorplan[cell]
                 update_active_cells(floorplan, c, active_cells)
-                print(f'active_cells={active_cells}')
+                #print(f'active_cells={active_cells}')
 
             valid_obtainable_cells = active_cells.copy()
         filename, current_step = trivial_utils.create_filename_in_order('png', 'Step', current_step)

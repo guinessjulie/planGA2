@@ -67,7 +67,7 @@ class RoomPolygon:
 
     def calc_rectangularity(self): # todo _corners 값이 바뀌어도 실행이 되는지 확인
         if self.bb.area < self.area:
-            print(f'something wrong bb.area:{self.bb.area} < area:{self.area}')
+            print(f'something wrong bb.area{self.bb.area} < area:{self.area}')
         return self.area / self.bb.area if self.bb.area != 0 else float('inf')
 
     # todo _corners 값이 바뀌어도 실행이 되는지 확인
@@ -82,7 +82,7 @@ class RoomPolygon:
         self.area = self.calculate_area()
         self.perimeter = self.calculate_perimeter()
         self.min_length = self.calculate_min_length()
-        self.simplicity = self.calculate_simplicity()
+        self.simplicity = self.calc_simplicity()
 
     def get_min_max_coordinates(self):
         """
@@ -136,7 +136,6 @@ class RoomPolygon:
         self.area = self.calculate_area()
         self.perimeter = self.calculate_perimeter()
         self.min_length = self.calculate_min_length()
-        self.simplicity = self.calculate_simplicity()
 
     def get_intersections(self, moved_edge, other_polygon):
         intersections = []
@@ -225,7 +224,6 @@ class RoomPolygon:
         self.area = self.calculate_area()
         self.perimeter = self.calculate_perimeter()
         self.min_length = self.calculate_min_length()
-        self.simplicity = self.calculate_simplicity()
 
     def is_corner_perpendicular(self, corner_index):
         num_corners = len(self.corners)
