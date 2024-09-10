@@ -240,7 +240,7 @@ class FloorplanLogic:
 
         # 가장 작은 num_cas 값을 가진 모든 candidate를 선택
         min_candidates = [candidates[idx] for idx, cas in num_cas_dict.items() if cas == min_cas]
-        print(f'candidate size = {len(min_candidates)}')
+        # print(f'candidate size = {len(min_candidates)}')
         return min_candidates if min_candidates else [initial_floorplan]
 
 

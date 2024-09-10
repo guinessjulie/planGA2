@@ -66,6 +66,8 @@ class FloorplanApp:
             # ("Batch Processing", self.get_optimal_from_initial_floorplan), todo 이걸로 바꾸려고 했는데 왜 바꾸려고 했는지를 다시 알아내야 함
             ("Create Initial Plans", self.run_batch_from_seed),
             ("Method Analysis", self.method_comparison_analysis),
+            ("Seed Analysis", self.seed_comparison_analysis),
+
             ("Evolve", self.evolve),
             # ('Create Floorplan', self.initialize_floorplan),
             # ("Simplify Floorplan", self.exchange_cells),
@@ -131,17 +133,46 @@ class FloorplanApp:
             constr.append(cons)
         return constr
 
+    def seed_comparison_analysis(self):
+        num_rooms = self.options.num_rooms
+        reqs = Req()
+        n_iter = self.options.iteration_from_seed
+        savefilename = trivial_utils.create_filename_with_datetime(ext='csv', prefix='Seed_Analysis')
+        seed_no = 0
+        for i in range(100):
+            seed, assigned_seed_by = self.create_room_start_cell()  # 이 부분에서 assigned_seed_by가 바뀜
+            seed_no += 1
+            fl_fit = []  # 이 안에서 fl_fit 초기화
+            seed_fit = dict()
+            for j in range(n_iter):
+                initial_floorplan = create_floorplan(seed, k=num_rooms, options=self.options, reqs=reqs)
+
+                # Optimal candidates 처리
+                optimal_candidates = self.FL.create_candidate_floorplans(initial_floorplan)
+
+                # 각 floorplan에 대해 fitness 계산
+                for fl in optimal_candidates:
+                    grid_polygon = GridPolygon(fl)
+                    fit = Fitness(fl, num_rooms, grid_polygon.room_polygons, reqs)
+                    if seed_no not in seed_fit:
+                        seed_fit[seed_no] = []
+                    else:
+                        seed_fit[seed_no].append(fit)
+            # 매번 assigned_seed_by가 변할 때마다 데이터 저장
+            constraints = self.create_column_title(assigned_seed_by)
+            trivial_utils.save_results_by_seed_to_csv(seed_fit, constraints=constraints, filename=savefilename)  # 여기서 CSV 파일에 저장
+
+
     def method_comparison_analysis(self):
-        num_iter_for_seed = 10
+        n_iter = self.options.iteration_from_seed
         num_rooms = self.options.num_rooms
         reqs = Req()
         savefilename = trivial_utils.create_filename_with_datetime(ext='csv', prefix='Analysis')
         for i in range(100):
             seed, assigned_seed_by = self.create_room_start_cell()  # 이 부분에서 assigned_seed_by가 바뀜
-            n_iter = self.options.iteration_from_seed
 
             fl_fit = []  # 이 안에서 fl_fit 초기화
-            for j in range(num_iter_for_seed):
+            for j in range(n_iter):
                 initial_floorplan = create_floorplan(seed, k=num_rooms, options=self.options, reqs=reqs)
 
                 # Optimal candidates 처리

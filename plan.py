@@ -579,7 +579,6 @@ def is_room_split(floorplan, room_number):
 
 
 def allocate_rooms(floorplan, display=False, save=True, num_rooms=8):
-    print(f'allocate_room')
 
     def choose_new_adjacent_cell(floorplan, cell):
         row, col = cell

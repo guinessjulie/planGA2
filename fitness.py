@@ -34,10 +34,10 @@ class Fitness:
         total_fitness =( adj_weight + ori_weight + size_weight )/ ((adj_weight /adj) + (ori_weight/size) + (size_weight/ori))
         return total_fitness
 
-    def calc_simplicity(self):
-        return np.average([(room.simplicity) for room_id, room in self.room_polygons.items()]) # underway 동작확인
     def calc_areas(self):
         return {room_id: room.area for room_id, room in self.room_polygons.items()} # underway 동작확인
+    def calc_simplicity(self):
+        return np.average([(room.simplicity) for room_id, room in self.room_polygons.items()]) # underway 동작확인
 
     def calc_rectangularity(self):
         return np.average([room.rectangularity for room_id, room in self.room_polygons.items()]) # todo change .values and remove room_id
@@ -45,14 +45,12 @@ class Fitness:
     def calc_regularity(self):
         return np.average([room.regularity for room in self.room_polygons.values()])
 
-    def calc_complexity(self):
-        return np.average([room.simplicity for room in self.room_polygons.values()])
+    def calc_pa_ratio(self):
+        return np.average([room.pa_ratio for room in self.room_polygons.values()])
 
     def room_min_length(self):
         return np.average([(room.min_length) for room_id, room in self.room_polygons.items()]) # underway 동작확인
 
-    def calc_pa_ratio(self):
-        return np.average([room.pa_ratio for room in self.room_polygons.values()])
 
     def calc_adj_satisfaction(self): # info fitness에서 직접 계산
         adj_requirement = self.reqs.get_adj_req()

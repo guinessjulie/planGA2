@@ -6,6 +6,51 @@ import random
 
 
 
+def save_results_by_seed_to_csv(seed_fit, constraints=['None', 'None', 'None'], filename="floorplan_fitness_results.csv"):
+    """
+    Dictionary of {seed: [fitness objects]} will be saved to a CSV file.
+    파일이 존재하면 이어서 저장, 존재하지 않으면 새로 생성.
+    """
+
+    # 'a' 모드로 파일을 열어 이어쓰기
+    file_exists = False
+    try:
+        with open(filename, 'r'):
+            file_exists = True  # 파일이 이미 존재하는지 체크
+    except FileNotFoundError:
+        pass
+
+    with open(filename, mode='a', newline='') as file:
+        writer = csv.writer(file)
+
+        # 파일이 존재하지 않으면 헤더를 추가
+        if not file_exists:
+            writer.writerow(['Seed', 'Size_Opt', 'Adj_Opt', 'Ori_Opt', 'Adjacency', 'Orientation', 'Size', 'Simplicity', 'Rectangularity', 'Regularity', 'PA Ratio', 'Weighted_Fitness'])
+
+        col1, col2, col3 = None, None, None
+        col1 = 1 if 'Size' in constraints else 0
+        col2 = 1 if 'adjacency' in constraints else 0
+        col3 = 1 if 'orientation' in constraints else 0
+
+        # seed_fit 딕셔너리에서 seed와 fitness 리스트를 순회
+        for seed, fitness_list in seed_fit.items():
+            for fitness in fitness_list:
+                # 각 fitness 객체의 결과를 CSV에 기록, 첫 번째 열에 seed 추가
+                writer.writerow([
+                    seed,  # Seed 정보를 기록
+                    col1,
+                    col2,
+                    col3,  # 세 가지 constraint 정보를 기록
+                    fitness.adj_satisfaction,
+                    fitness.orientation_satisfaction,
+                    fitness.size_satisfaction,
+                    fitness.simplicity,
+                    fitness.rectangularity,
+                    fitness.regularity,
+                    fitness.pa_ratio,
+                    fitness.fitness
+                ])
+
 def save_results_to_csv(results, constraints=['None', 'None', 'None'], filename="floorplan_fitness_results.csv"):
     """
     List of fitness objects will be saved to a CSV file.
@@ -26,7 +71,7 @@ def save_results_to_csv(results, constraints=['None', 'None', 'None'], filename=
 
         # 파일이 존재하지 않으면 헤더를 추가
         if not file_exists:
-            writer.writerow(['Size_Opt','Adj_Opt', 'Ori_Opt',  'Adjacency', 'Orientation', 'Size', 'Simplicity', 'Rectangularity', 'Regularity', 'PA Ratio', 'Weighted_Fitness'])
+            writer.writerow(['Seed', 'Size_Opt', 'Adj_Opt', 'Ori_Opt', 'Adjacency', 'Orientation', 'Size', 'Simplicity', 'Rectangularity', 'Regularity', 'PA Ratio', 'Weighted_Fitness'])
 
         col1, col2, col3 = None, None, None
         col1 = 1 if 'Size' in constraints else 0
