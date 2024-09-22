@@ -36,8 +36,44 @@ class GridDrawer:
         # 이미지 파일로 저장
         im.save(savepath)
 
-    @staticmethod
     def draw_grid(coords, outfile):
+        """
+        주어진 좌표 리스트를 사용하여 사각형을 먼저 그리고, 그 위에 그리드 라인을 그려서 생성한 이미지를 저장하는 함수.
+        parameters:
+        coords (list of tuples): 그리기를 원하는 좌표의 리스트. 각 튜플은 (행, 열) 형식.
+        outfile (str): 생성된 이미지를 저장할 파일 이름.
+        """
+        max_row = max(coord[0] for coord in coords)
+        max_col = max(coord[1] for coord in coords)
+
+        width = (max_col + 1) * 20 + 20
+        height = (max_row + 1) * 20 + 20
+        im = Image.new('RGB', (width, height), (255, 255, 255))
+        draw = ImageDraw.Draw(im)
+
+        # 각 좌표에 사각형 먼저 그리기
+        for row, col in coords:
+            rect_start_x = col * 20 + 10
+            rect_start_y = row * 20 + 10
+            rect_end_x = (col + 1) * 20 + 10
+            rect_end_y = (row + 1) * 20 + 10
+            draw.rectangle([rect_start_x, rect_start_y, rect_end_x, rect_end_y],
+                           fill=(192, 192, 192), outline=None)
+
+        # 사각형 위에 그리드 라인 그리기
+        for x in range(max_col + 2):
+            line_x = x * 20 + 10
+            draw.line((line_x, 10, line_x, height - 10), fill=(0, 0, 0))
+        for y in range(max_row + 2):
+            line_y = y * 20 + 10
+            draw.line((10, line_y, width - 10, line_y), fill=(0, 0, 0))
+
+        # 이미지 보기 및 파일로 저장
+        im.show()
+        im.save(outfile)
+
+    @staticmethod
+    def draw_grid_Original(coords, outfile):
         """
         주어진 좌표 리스트를 사용하여 사각형과 좌표 텍스트를 그린 이미지를 생성하고 저장하는 함수.
         parameters:

@@ -184,22 +184,6 @@ class GridPolygon:
         return corners
 
 
-    def get_polygon_corners3(self, room_number):
-        cell_corners = self.get_cell_corners(room_number)
-        corner_count = defaultdict(int)
-
-        for cell in cell_corners:
-            for corner in cell:
-                corner_count[corner] += 1
-
-        outer_corners = [corner for corner, count in corner_count.items() if count < 4]
-
-        corners = self.sort_and_remove_collinear(outer_corners)
-
-        return corners
-
-
-
 
 
     def get_combined_polygon(self):
@@ -329,4 +313,20 @@ class GridPolygon:
         polygon_exporter.save_polygon_to_dxf(combined_polygon, f"combined_polygon_{suffix}.dxf")
         polygon_exporter.save_polygon_to_png(room_polygons, f"room_polygons_{suffix}.png")
         polygon_exporter.save_polygon_to_png_with_dimensions(room_polygons, f"room_polygons_with_dimensions_{suffix}.png")
+
+
+    def get_polygon_corners3(self, room_number):
+        cell_corners = self.get_cell_corners(room_number)
+        corner_count = defaultdict(int)
+
+        for cell in cell_corners:
+            for corner in cell:
+                corner_count[corner] += 1
+
+        outer_corners = [corner for corner, count in corner_count.items() if count < 4]
+
+        corners = self.sort_and_remove_collinear(outer_corners)
+
+        return corners
+
 

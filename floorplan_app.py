@@ -5,7 +5,7 @@ import numpy as np
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from tkinter import filedialog, messagebox
 from fitness import Fitness
-from trivial_utils import generate_unique_id
+from trivial_utils import generate_unique_id,create_fitness_info
 
 import trivial_utils
 from main import GridDrawer, exchange_protruding_cells, categorize_boundary_cells, GraphBuilder, GraphDrawer, run_selected_module,  exit_module
@@ -35,6 +35,8 @@ class FloorplanApp:
         self.options = Options()
         self.FL = FloorplanLogic(self.options.num_rooms)
         self.create_widgets()
+        self.seed_iteration = 0
+        self.temperary_seed = None
 
 
     def create_widgets(self):
@@ -64,13 +66,13 @@ class FloorplanApp:
         buttons = [
             # ("Initial Room Location", self.create_room_start_cell),
             # ("Batch Processing", self.get_optimal_from_initial_floorplan), todo 이걸로 바꾸려고 했는데 왜 바꾸려고 했는지를 다시 알아내야 함
-            ("Create Initial Plans", self.run_batch_from_seed),
+            ("Create Floorplan", self.run_batch_from_seed),
+            # ("Simplify Floorplan", self.exchange_cells),
+            # ('Create Floorplan', self.initialize_floorplan),
             ("Method Analysis", self.method_comparison_analysis),
             ("Seed Analysis", self.seed_comparison_analysis),
 
             ("Evolve", self.evolve),
-            # ('Create Floorplan', self.initialize_floorplan),
-            # ("Simplify Floorplan", self.exchange_cells),
             # ("Choose Most Simplified", self.choose_simplified),
             # ("Build Polygon", self.build_polygon),
             # ("Draw Floorplan", self.draw_floorplan_menu),
@@ -112,16 +114,35 @@ class FloorplanApp:
         self.best_fitness_label = tk.Label(best_fitness_frame, text="Best Fitness: N/A", font=("Arial", 14))
         self.best_fitness_label.pack(pady=10)
 
-        # OK 버튼 추가 및 배치 (bottom_frame의 아래쪽에 배치)
-        self.ok_button = ttk.Button(bottom_frame, text="OK", command=self.next_iteration)
-        self.ok_button.pack(side=tk.BOTTOM, pady=20)
+        # 버튼을 수평으로 배열하기 위한 프레임 생성
+        button_frame = ttk.Frame(bottom_frame)
+        button_frame.pack(side=tk.BOTTOM, pady=20)  # 이 프레임을 bottom_frame의 바닥에 붙임
+
+        # 기존 OK 버튼 코드 (이 부분을 button_frame 내에 삽입)
+        self.ok_button = ttk.Button(button_frame, text="OK", command=self.next_iteration)
+        self.ok_button.pack(side=tk.LEFT, padx=10)  # 수평 배열을 위해 side=tk.LEFT 사용
         self.ok_button.config(state=tk.DISABLED)  # 첫 시작에는 비활성화
+
+        # 새로운 버튼 추가
+        self.save_seed_button = ttk.Button(button_frame, text="Save Seed", command=self.save_seed)
+        self.save_seed_button.pack(side=tk.LEFT, padx=10)  # 수평 배열을 위해 side=tk.LEFT 사용
+        self.save_seed_button.config(state=tk.DISABLED)  # 첫 시작에는 비활성화
+
+        self.save_floorplan_button = ttk.Button(button_frame, text="Save Floorplan", command=self.save_floorplan)
+        self.save_floorplan_button.pack(side=tk.LEFT, padx=10)  # 수평 배열을 위해 side=tk.LEFT 사용
+        self.save_floorplan_button.config(state=tk.DISABLED)  # 첫 시작에는 비활성화
+
+    def save_seed(self):
+        pass
+
+    def save_floorplan(self):
+        pass
 
     # info Menu event from: [Create Initial Population]
     def run_batch_from_seed(self):
-        seed = self.create_room_start_cell()
+        self.temperary_seed = self.create_room_start_cell()
         if self.options.silence_mode: # todo App에서 options를 가지고 있어야 하냐 한다. 여기서 가지고 Floorplan에 넘겨주자
-            self.create_floorplans_from_seed(seed)
+            self.create_floorplans_from_seed(self.temperary_seed)
         else:
             self.run_iteration()
 
@@ -399,20 +420,28 @@ class FloorplanApp:
             text_result = f"Best Floorplan Above\nAverage fitness For the seed:\n{text_result}"
             return text_result
 
-        if self.iteration < 10:
+        num_rooms = self.options.num_rooms
+        reqs = Req()
+        n_iter = self.options.iteration_from_seed
+
+        if self.seed_iteration < n_iter:
             self.ok_button.config(state = tk.DISABLED)
 
-            initial_floorplan = create_floorplan(self.seed, k= self.num_rooms, options = self.options, reqs=self.reqs)
+            initial_floorplan = create_floorplan(self.temperary_seed, k= num_rooms, options = self.options, reqs=reqs)
             # self.draw_floorplan(initial_floorplan, self.initial_canvas)
-            simplified_floorplan, fit = self.get_optimal_from_initial_floorplan(initial_floorplan)
+            simplified_floorplan, fit= self.FL.get_optimal_from_initial_floorplan(initial_floorplan)
+            fit_result = create_fitness_info(fit)
+            self.fitness_label.config(text=f"Fitness Results:\n{fit_result}")
             self.draw_on_canvas(simplified_floorplan, self.final_canvas)
             room_areas = [room.area for room in fit.room_polygons.values()]
             self.draw_on_canvas_metrics(simplified_floorplan, room_areas, self.final_canvas)
             #결과 저장
-            self.floorplans.append( (simplified_floorplan, fit))
+            # self.floorplans.append( (simplified_floorplan, fit)) # error here MOVED TO LOGIC 0912
 
             # OK 버튼 활성화
             self.ok_button.config(state=tk.NORMAL)
+            self.save_seed_button.config(state=tk.NORMAL)
+            self.save_floorplan_button.config(state=tk.NORMAL)
 
         else:
             self.fitness_label.config(text="Batch processing complete.")
@@ -441,11 +470,11 @@ class FloorplanApp:
             # self.draw_on_canvas(self.seed, self.initial_canvas)
 
     def next_iteration(self):
-        self.iteration += 1
+        self.seed_iteration += 1
         self.run_iteration()
 
     def get_optimal_from_initial_floorplan(self, initial_floorplan):
-        optimal_candidates = self.create_candidate_floorplans(initial_floorplan)
+        optimal_candidates = FL.create_candidate_floorplans(initial_floorplan)
 
         print(f'{len(optimal_candidates)} floorplan candidates generated')
         # info what self.build_polygon() does

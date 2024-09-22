@@ -9,7 +9,7 @@ from options import Options
 import constants
 from plan_utils import expand_grid
 from simplify import exchange_protruding_cells, count_cascading_cells
-from trivial_utils import generate_unique_id
+from trivial_utils import generate_unique_id, create_fitness_info
 
 # info 이 클라스는  list of dictionary {seed : list of tuple (floorplans:fitness)} 를 갖는다.
 class FloorplanLogic:
@@ -68,7 +68,7 @@ class FloorplanLogic:
         best_fits_index = np.argmax(avg_fits)
         best_fit = floorplans[best_fits_index][1]
         best_fit_floorplan = floorplans[best_fits_index][0]
-        best_fit_result = f'Best Fitness Result\n' + self.create_fitness_info(best_fit)
+        best_fit_result = f'Best Fitness Result\nreate_fitness_info(best_fit)'
 
         room_areas = [room.area for room in best_fit.room_polygons.values()]
         seed_set = {tuple(el) for el in np.argwhere(self.floorplan.seed > 0)} # todo remove redundancy
@@ -95,7 +95,7 @@ class FloorplanLogic:
         best_fits_index = np.argmax(avg_fits)
         best_fit = floorplans[best_fits_index][1]
         best_fit_floorplan = floorplans[best_fits_index][0]
-        best_fit_result = f'Best Fitness Result\n' + self.create_fitness_info(best_fit)
+        best_fit_result = f'Best Fitness Result\n' + create_fitness_info(best_fit)
 
         room_areas = [room.area for room in best_fit.room_polygons.values()]
         seed_set = {tuple (el) for el in np.argwhere(seed > 0)}
@@ -148,17 +148,17 @@ class FloorplanLogic:
         # info draw_plan_with_values > draw_plan
         full_path = trivial_utils.create_filename(self.path, 'Optimal_plan', '', '', 'png')
         room_areas = [room.area for room in fit.room_polygons.values()]
-
-        self.draw_on_canvas_metric(optimal_floorplan,  room_areas, self.final_canvas)
+        self.floorplans.append((optimal_floorplan, fit)) # info to move from app to logic 0922
+        # self.draw_on_canvas_metric(optimal_floorplan,  room_areas, self.final_canvas)
         #     fig = GridDrawer.draw_plan_with_metrics(optimal_floorplan, full_path, display=False, save=False, num_rooms=self.num_rooms, metrics=room_areas)
         #     self.show_plot_on_canvas(fig, self.final_canvas)
 
-        fitness_result = self.create_fitness_info(fit)
+        # fitness_result = create_fitness_info(fit)
         # 결과를 문자열로 포맷팅
 
         # 레이블에 피트니스 결과 표시
-        self.fitness_label.config(text=f"Fitness Results:\n{fitness_result}")
-        return optimal_floorplan, fit
+        # self.fitness_label.config(text=f"Fitness Results:\n{fitness_result}")
+        return optimal_floorplan, fit #info add fitness_result to return argument
 
     # info 여러 개의 simplified version 중 가장 높은 것을 선택
     def get_best_simplified_floorplan(self, initial_floorplan):
@@ -199,23 +199,9 @@ class FloorplanLogic:
         # 레이블에 피트니스 결과 표시
         
         return optimal_floorplan, fit
-    
-    def create_fitness_info(self, fit):
-        fitness_values = {
-            "Adjacency Satisfaction": fit.adj_satisfaction,
-            "Orientation Satisfaction":fit.orientation_satisfaction,
-            "Size Satisfaction": fit.size_satisfaction,
-            "Rectangularity": fit.rectangularity, # todo property 이기 때문에 method를 반납함. 따라서 Fitness에서 rectangularity를 직접 가지고 있어야 함
-            "Room Shape Simplicity": fit.simplicity,
-            "Room Regularity": fit.regularity,
-            "Squareness Measure": fit.pa_ratio,
-            "Fitness": fit.fitness
-        }
 
-        fitness_result = "\n".join([f"{key}: {value:.2f}" for key, value in fitness_values.items()])
 
-        return fitness_result
-    # cascading_cell이 0이면
+    # cascading_cell이 0이면 #info candidates []에 simplified를 여러개 한 거 중에서 가장 단순화한 것을 리턴. exchange_protruding_cells의 결과들을 넣는데,cascading_cells가 가장 작은 값을 리턴한다.
     def create_candidate_floorplans(self, initial_floorplan):
         min_cas = np.sum(initial_floorplan >= 1)  # cascading_cell의 최대 갯수
         num_cas = min_cas

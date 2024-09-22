@@ -332,18 +332,19 @@ def calculate_relative_scores(cell_positions):
 def create_floorplan(initialized_grid, k, options, reqs=None):
     if reqs is None:
         reqs = Req()
-    grid_copy = initialized_grid.copy()
+    # grid_copy = initialized_grid.copy() #info error by converted to tuple for seed option
+    grid_copy = initialized_grid[0].copy()
     display_process(grid_copy, k=k, options=options, prefix='Init0')  # info just save and display on pycharm
 
     if options.min_size_alloc is True:
-        floorplan = allocate_room_with_size(grid_copy, options.display, save=options.save, num_rooms=k, reqs=reqs)
+        floorplan = allocate_room_with_size(grid_copy, options = options, num_rooms=k, reqs=reqs)
     else:
-        floorplan = allocate_rooms(grid_copy, display=options.display, save=options.save, num_rooms=k)
+        floorplan = allocate_rooms(grid_copy, options=options, num_rooms=k)
 
     return floorplan
 
 
-def allocate_room_with_size(floorplan, display=False, save=True, num_rooms=8, reqs=None):
+def allocate_room_with_size(floorplan, options=None, num_rooms=8, reqs=None):
     print(f'allocate_room_with_size')
 
     def choose_new_adjacent_cell(floorplan, cell):
@@ -413,6 +414,11 @@ def allocate_room_with_size(floorplan, display=False, save=True, num_rooms=8, re
         # 현재 방의 면적이 최대 면적을 초과했는지 확인
         if reqs is None:
             reqs = Req()
+        if not options:
+            options = Options()
+            options.display = False
+            options.save = False
+
         min_area, max_area = reqs.get_area_range(room)
         if max_area is not None and room_areas[room] >= max_area:
             max_area_exceeded.add(room)  # 방을 더 이상 확장하지 않도록 집합에 추가
@@ -430,8 +436,11 @@ def allocate_room_with_size(floorplan, display=False, save=True, num_rooms=8, re
             room_areas[room] += 1
             update_active_cells(floorplan, cell, active_cells)
             update_active_cells(floorplan, new_cell, active_cells)
-
+        # display_process(floorplan, num_rooms, options, prefix='Step', postfix=current_step)
+        current_step +=1
     floorplan = fill_unassigned_cells(floorplan)
+
+
     return floorplan
 
 
@@ -578,7 +587,7 @@ def is_room_split(floorplan, room_number):
     return num_features > 1
 
 
-def allocate_rooms(floorplan, display=False, save=True, num_rooms=8):
+def allocate_rooms(floorplan, options=None, num_rooms=8):
 
     def choose_new_adjacent_cell(floorplan, cell):
         row, col = cell
@@ -606,7 +615,6 @@ def allocate_rooms(floorplan, display=False, save=True, num_rooms=8):
             else:
                 active_cells.add(adj_cell)
 
-    options = Options()
     active_cells = process_valid_cells(floorplan)
     current_step = 0
 

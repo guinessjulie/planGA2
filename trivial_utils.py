@@ -5,6 +5,22 @@ import csv
 import random
 
 
+def create_fitness_info(fit):
+    fitness_values = {
+        "Adjacency Satisfaction": fit.adj_satisfaction,
+        "Orientation Satisfaction": fit.orientation_satisfaction,
+        "Size Satisfaction": fit.size_satisfaction,
+        "Rectangularity": fit.rectangularity,
+        # todo property 이기 때문에 method를 반납함. 따라서 Fitness에서 rectangularity를 직접 가지고 있어야 함
+        "Room Shape Simplicity": fit.simplicity,
+        "Room Regularity": fit.regularity,
+        "Squareness Measure": fit.pa_ratio,
+        "Fitness": fit.fitness
+    }
+
+    fitness_result = "\n".join([f"{key}: {value:.2f}" for key, value in fitness_values.items()])
+
+    return fitness_result
 
 def save_results_by_seed_to_csv(seed_fit, constraints=['None', 'None', 'None'], filename="floorplan_fitness_results.csv"):
     """
