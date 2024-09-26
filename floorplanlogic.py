@@ -33,6 +33,21 @@ class FloorplanLogic:
     # 여기에 Floorplan 관련 로직을 넣음
     # 예: create_room_start_cell, initialize_floorplan, draw_floorplan_menu 등
 
+    def repeate_creating_floorplan(self,repeatation=10, seed=None, options=None, reqs=None):
+        floorplans = []
+        for i in range(repeatation):
+            simplified_floorplan, fit = self.build_floorplan_from_seed(seed, options=options, reqs =reqs)
+            floorplans.append((simplified_floorplan, fit))
+        return floorplans
+
+    def build_floorplan_from_seed(self, seed, options, reqs):
+        num_rooms = self.options.num_rooms
+        reqs = self.reqs
+        initial_floorplan = create_floorplan(seed, k= num_rooms, options = options, reqs=reqs)
+            # self.draw_floorplan(initial_floorplan, self.initial_canvas)
+        simplified_floorplan, fit= self.get_optimal_from_initial_floorplan(initial_floorplan)
+        return simplified_floorplan, fit
+
     def get_initial_footprint_grid(self): # create_sample_init_grid(self):  from main_ui
         # 임시 예제 데이터
         grid = constants.floor_grid
@@ -119,7 +134,7 @@ class FloorplanLogic:
     def get_optimal_from_initial_floorplan(self, initial_floorplan):
         optimal_candidates = self.create_candidate_floorplans(initial_floorplan)
 
-        print(f'{len(optimal_candidates)} floorplan candidates generated')
+        # print(f'{len(optimal_candidates)} floorplan candidates generated')
         # info what self.build_polygon() does
 
         if len(optimal_candidates) == 1:
@@ -201,7 +216,9 @@ class FloorplanLogic:
         return optimal_floorplan, fit
 
 
-    # cascading_cell이 0이면 #info candidates []에 simplified를 여러개 한 거 중에서 가장 단순화한 것을 리턴. exchange_protruding_cells의 결과들을 넣는데,cascading_cells가 가장 작은 값을 리턴한다.
+    # info candidates []에 simplified를 여러개 한 거 중에서 가장 단순화한 것을 리턴.
+    #  exchange_protruding_cells의 결과들을 넣는데,
+    #  cascading_cells가 가장 작은 값을 리턴한다.
     def create_candidate_floorplans(self, initial_floorplan):
         min_cas = np.sum(initial_floorplan >= 1)  # cascading_cell의 최대 갯수
         num_cas = min_cas

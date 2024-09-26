@@ -9,3 +9,5 @@ class Options:
         self.silence_mode = config.getboolean('RunningOptions', 'silence_mode', fallback=True)
         self.num_rooms = config.getint('Metrics','num_rooms')
         self.iteration_from_seed = config.getint('RunningOptions', 'iteration_from_seed')
+        self.threshold_optimal = config.getfloat('Metrics', 'threshold_value_for_optimal_floorplan')
+        self.max_num_floorplan_generation = config.getint('Metrics', 'max_number_of_floorplan_generation')

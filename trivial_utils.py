@@ -5,6 +5,14 @@ import csv
 import random
 
 
+def add_suffix_before_extension(file_path, suffix):
+     # 파일 이름과 확장명 분리
+    base_name, extension = os.path.splitext(file_path)
+    # 접미사 추가
+    new_file_name = f"{base_name}{suffix}{extension}"
+
+    return new_file_name
+
 def create_fitness_info(fit):
     fitness_values = {
         "Adjacency Satisfaction": fit.adj_satisfaction,

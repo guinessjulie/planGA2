@@ -36,9 +36,7 @@ def locate_initial_cell(empty_grid, k):
     initialized_grid, initial_cells = place_seed(to_np_array(empty_grid), k,
                                                  adjacency_list)  # info now seed does not have room number
     display_process(initialized_grid, k, options, "Seed0")
-    initialized_grid, remaining_positions, assigned_seed_by = assign_room_id(initialized_grid, initial_cells,
-                                                           orientation_requirements,
-                                                           adjacency_list) # info seed now has the room_id
+    initialized_grid, remaining_positions, assigned_seed_by = assign_room_id(initialized_grid,initial_cells,orientation_requirements,adjacency_list) # info seed now has the room_id
     display_process(initialized_grid, k, options, "Seed2")
     return initialized_grid, initial_cells, assigned_seed_by
 
@@ -333,7 +331,7 @@ def create_floorplan(initialized_grid, k, options, reqs=None):
     if reqs is None:
         reqs = Req()
     # grid_copy = initialized_grid.copy() #info error by converted to tuple for seed option
-    grid_copy = initialized_grid[0].copy()
+    grid_copy = initialized_grid.copy() # info 경우에 따라 커플로 전달되는 경우가 있다 이러한 경우, 콜러가 고쳐야됨 seed, 'optimization name'
     display_process(grid_copy, k=k, options=options, prefix='Init0')  # info just save and display on pycharm
 
     if options.min_size_alloc is True:
@@ -345,7 +343,7 @@ def create_floorplan(initialized_grid, k, options, reqs=None):
 
 
 def allocate_room_with_size(floorplan, options=None, num_rooms=8, reqs=None):
-    print(f'allocate_room_with_size')
+    # print(f'allocate_room_with_size')
 
     def choose_new_adjacent_cell(floorplan, cell):
         row, col = cell
@@ -737,7 +735,8 @@ def fill_unassigned_cells(floorplan):
                 floorplan[cell] = floorplan[selected_adj_cell]  # 해당 빈 셀을 선택한 방 번호로 채움
                 any_cell_filled = True  # 최소한 하나의 셀이 채워졌음을 기록
             else:
-                print(f"No adjacent room for cell {cell}, skipping.")
+                pass
+                # print(f"No adjacent room for cell {cell}, skipping.")
 
         # 더 이상 채울 수 있는 셀이 없으면 루프 종료
         if not any_cell_filled:  # empty_cell이 비어서 iteration을 하지 못했거나, valid한 인접 방이 없어서 아무것도 못한 경우
