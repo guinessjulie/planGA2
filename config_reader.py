@@ -16,6 +16,12 @@ def read_constraint(filename, section):
             constraints[int(key)] = value
     return constraints
 
+def read_str_value_of(filename, section, item):
+    config = configparser.ConfigParser()
+    config.read(filename)
+    str_value = config[section][item]
+    return str_value
+
 def read_str_constraints(filename, section):
     config = configparser.ConfigParser()
     config.read(filename)

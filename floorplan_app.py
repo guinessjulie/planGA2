@@ -30,7 +30,8 @@ import configparser
 # todo run_iteration에서 self.floorplans로 춴래 처리했었느데 로칼변수 floorplans를 선언하고 거기에 리스트를 만들어서 리턴하고 있음. 이 로직을 잘 살펴서 계산해야 함
 class FloorplanApp:
     # info: done: in self.simplified_candidates have diff floorplans from the same initiialized_floorplan. after choosing best simplified floorplans. assigns to self.floorplan to set final result
-    def __init__(self, root, init_grid, num_rooms, callback):
+    # def __init__(self, root, init_grid, num_rooms, callback): # all other parameters are moved to logic
+    def __init__(self, root):
         self.root = root
         self.root.title("PlanGen Floorplan")
         self.options = Options()

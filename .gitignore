@@ -54,7 +54,7 @@ coverage.xml
 *.cover
 *.py,cover
 .hypothesis/
-.png
+testing_results/.png
 *.png
 
 # Translations
@@ -129,6 +129,6 @@ dmypy.json
 *.sublime-workspace
 
 # test
-.png
+testing_results/.png
 testing_results/
 backups/

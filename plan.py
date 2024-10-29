@@ -1394,7 +1394,7 @@ def to_adj_dict(adjacency_requirements):
 
 # todo important: why not just assign random 8 position and later decide room_id
 def to_np_array(grid):
-    m, n = len(grid), len(grid[0]) if grid else 0
+    m, n = len(grid), len(grid[0])
     np_arr = np.full((m, n), -1, dtype=int)  # Initialize all cells as -1
     return np.where(np.array(grid) == 1, 0, -1)
 

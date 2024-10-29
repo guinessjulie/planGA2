@@ -1,4 +1,5 @@
 import numpy as np
+import os
 from fitness import Fitness
 from plan import create_floorplan, locate_initial_cell
 from GridPolygon import GridPolygon
@@ -10,7 +11,8 @@ import constants
 from plan_utils import expand_grid
 from simplify import exchange_protruding_cells, count_cascading_cells
 from trivial_utils import generate_unique_id, create_fitness_info
-
+from config_reader import read_str_value_of
+from GridGenerator import GridGenerator
 # info 이 클라스는  list of dictionary {seed : list of tuple (floorplans:fitness)} 를 갖는다.
 class FloorplanLogic:
     def __init__(self, num_rooms):
@@ -50,8 +52,23 @@ class FloorplanLogic:
 
     def get_initial_footprint_grid(self): # create_sample_init_grid(self):  from main_ui
         # 임시 예제 데이터
-        grid = constants.floor_grid
-        return expand_grid(grid)
+        # grid = constants.floor_grid
+        # return expand_grid(grid)
+        try:
+            grid_file = read_str_value_of('config.ini', 'RunningOptions', 'grid_file')
+            print(grid_file)
+            if not os.path.exists(grid_file):
+                grid = constants.floor_grid
+                return expand_grid(grid)
+
+            grid = GridGenerator.load_grid_as_np(file_path=grid_file)
+            if grid is not None:
+                return grid
+            else:
+                print(f'Failed to load {grid_file}')
+
+        except KeyError:
+            print('Error: input_file entry is not found in [RunningOptions] section in config.ini')
 
     # info: from FloorplanApp Menu [batch processing] >
     #  FloorplanApp.seed = FloorplanApp.initialize_location >

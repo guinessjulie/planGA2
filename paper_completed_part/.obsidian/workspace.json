@@ -8,55 +8,16 @@
         "type": "tabs",
         "children": [
           {
-            "id": "02002e6a0a454fdc",
+            "id": "60877d511437f6d4",
             "type": "leaf",
             "state": {
-              "type": "markdown",
+              "type": "image",
               "state": {
-                "file": "chapter5.md",
-                "mode": "source",
-                "source": false
-              }
-            }
-          },
-          {
-            "id": "b172430b3bf86a8c",
-            "type": "leaf",
-            "state": {
-              "type": "markdown",
-              "state": {
-                "file": "보충사항.md",
-                "mode": "source",
-                "source": false
-              }
-            }
-          },
-          {
-            "id": "41a6a8baf233b426",
-            "type": "leaf",
-            "state": {
-              "type": "markdown",
-              "state": {
-                "file": "1장.md",
-                "mode": "source",
-                "source": false
-              }
-            }
-          },
-          {
-            "id": "aa8df734d1d1330a",
-            "type": "leaf",
-            "state": {
-              "type": "markdown",
-              "state": {
-                "file": "chapter 6.md",
-                "mode": "source",
-                "source": false
+                "file": "그림4.png"
               }
             }
           }
-        ],
-        "currentTab": 3
+        ]
       }
     ],
     "direction": "vertical"
@@ -122,7 +83,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "chapter 6.md",
+                "file": "그림4.png",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -139,7 +100,7 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "chapter 6.md",
+                "file": "그림4.png",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               }
@@ -162,7 +123,7 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "chapter 6.md"
+                "file": "그림4.png"
               }
             }
           }
@@ -183,37 +144,40 @@
       "command-palette:Open command palette": false
     }
   },
-  "active": "aa8df734d1d1330a",
+  "active": "cdc35cfbeb12abd1",
   "lastOpenFiles": [
+    "chapter5.md",
+    "chapter5_complete.md",
+    "문헌고찰2쪽.md",
+    "논문20241002.hwp",
+    "chapter4.md",
+    "chapter3_version2.md",
+    "chapter3_version3_no수식for_hwp.md",
+    "논문09251527비교.pdf",
+    "기존 자동화 연ㄱ ㅜ.md",
+    "문헌고찰.md",
+    "chapter 6.md",
+    "논문09251528.BAK",
+    "논문09251528.$$$",
+    "논문09251528.hwp",
+    "26.txt",
+    "27.txt",
+    "diff_result.txt",
+    "논문09251526비교.pdf",
     "논문09251526.BAK",
-    "논문09251526.$$$",
     "그림4.png",
-    "논문09251526.hwp",
-    "논문09251525.hwp",
-    "chapter1~chapter6.BAK",
-    "chapter1~chapter6.$$$",
-    "chapter1~chapter6.hwp",
-    "chapter1~chapter5.BAK",
-    "chapter1~chapter5.$$$",
     "그림9.png",
     "그림6.png",
-    "desktop.ini",
     "Pasted image 20240923211127.png",
     "Pasted image 20240923211119.png",
     "Pasted image 20240923210138.png",
     "1장.md",
-    "chapter 6.md",
-    "백업본chapter5.wbk",
     "footprint.jpg",
     "footprint_input.PNG",
     "tmp2akit35o.PNG",
     "보충사항.md",
-    "chapter5.md",
     "Pasted image 20240916181747.png",
-    "chapter4.md",
     "updated_chapter4.md",
-    "chapter3_version3_no수식for_hwp.md",
-    "chapter3_version2.md",
     "4. 적합도 함수와 사용자 정의 가중치 기반 설계 평가.md",
     "chapter3.md",
     "cascading_cells.md",
