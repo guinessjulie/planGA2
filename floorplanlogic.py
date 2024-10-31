@@ -55,7 +55,7 @@ class FloorplanLogic:
         # grid = constants.floor_grid
         # return expand_grid(grid)
         try:
-            grid_file = read_str_value_of('config.ini', 'RunningOptions', 'grid_file')
+            grid_file = read_str_value_of('config.ini', 'FileSettings', 'default_grid_file')
             print(grid_file)
             if not os.path.exists(grid_file):
                 grid = constants.floor_grid

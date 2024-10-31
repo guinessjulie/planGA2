@@ -187,6 +187,17 @@ class SettingsApp:
 
         self.entry_frames.append(row_frame)
 
+    def update_room_name(self, room_number_label, room_name_var):
+        """방 이름이 변경될 때 호출되는 이벤트 핸들러"""
+        room_number = room_number_label.cget("text")
+        room_name = room_name_var.get().strip()
+        section = "RoomNames"
+        if room_number and room_name:
+            self.config.set(section, room_number, room_name)
+        else:
+            if room_number in self.config[section]:
+                del self.config[section][room_number]
+
     def remove_room_name_entry(self, row_frame, room_number_label, room_name_entry):
         # 설정 파일에서 해당 항목 삭제
         section = "RoomNames"

@@ -1,19 +1,23 @@
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog
 import numpy as np
-from config_reader import read_config_int
+from config_reader import read_config_int, read_str_value_of
+
 class GridGenerator:
     def __init__(self, root):
         self.root = root
         self.root.title("Grid Generator")
 
         # 기본 설정
-        self.cell_size = 50  # todo: settings.ini에서 설정값 가져오기
-        self.rows, self.cols = read_config_int('config.ini', 'Metrics', 'base_rows'), read_config_int('config.ini', 'Metrics', 'base_cols')#(4, 3)
+        self.pixel_size = 20  # todo: settings.ini에서 설정값 가져오기
+        self.rows, self.cols = read_config_int('config.ini', 'Metrics', 'base_rows'), read_config_int('config.ini', 'Metrics', 'base_cols')
         self.default_color = "white"
         self.selected_color = "gray"
         self.highlight_color = "lightgray"
         self.matrix = self.initialize_matrix(self.rows, self.cols)
+
+        # 하이라이트된 셀 추적을 위한 집합
+        self.highlighted_cells = set()
 
         # 캔버스 생성
         self.canvas = tk.Canvas(root)
@@ -55,12 +59,10 @@ class GridGenerator:
             try:
                 rows = int(rows_entry.get())
                 cols = int(cols_entry.get())
-                cell_size = int(cell_size_entry.get())
-                scale = float(cell_size_entry.get())
+                scale = float(scale_entry.get())
                 pixel_size = int(pixel_size_entry.get())
-                if rows > 0 and cols > 0 and cell_size > 0 and scale > 0 and pixel_size > 0:
+                if rows > 0 and cols > 0 and pixel_size > 0 and scale > 0 :
                     self.rows, self.cols = rows, cols
-                    self.cell_size = cell_size  # 셀 크기 업데이트
                     self.scale = scale  # 스케일 업데이트
                     self.pixel_size = pixel_size  # 픽셀 크기 업데이트
 
@@ -82,7 +84,7 @@ class GridGenerator:
 
         # Rows와 Columns를 나란히 배치할 Frame 생성
         row_col_frame = tk.Frame(dialog)
-        row_col_frame.pack(pady=(50, 10))
+        row_col_frame.pack(pady=(20, 10))
 
         # Rows 입력 필드
         tk.Label(row_col_frame, text="Rows and columns:").grid(row=0, column=0, padx=(0, 5))
@@ -101,10 +103,11 @@ class GridGenerator:
         size_frame.pack(pady=10)
 
         # Cell Length (Scale) 입력 필드
-        tk.Label(size_frame, text="Real Cell Length:").grid(row=0, column=0, padx=(0, 5))
-        cell_size_entry = tk.Entry(size_frame, width=10)
-        cell_size_entry.insert(0, str(read_config_int('config.ini', 'Metrics', 'scale')))
-        cell_size_entry.grid(row=0, column=1)
+        tk.Label(size_frame, text="Scale: Cell Length").grid(row=0, column=0, padx=(0, 5))
+        scale_entry = tk.Entry(size_frame, width=10)
+        scale_entry.insert(0, str(read_config_int('config.ini', 'Metrics', 'scale')))
+        # cell_size_entry.insert(0, str(self.cell_size))  # 현재 cell_size 값 사용
+        scale_entry.grid(row=0, column=1)
 
         # mm² 단위 표시
         tk.Label(size_frame, text="mm²").grid(row=0, column=3, padx=(5, 0))
@@ -116,27 +119,33 @@ class GridGenerator:
         pixel_size_entry.grid(row=1, column=1, pady=(10, 0))
         tk.Label(size_frame, text="pixel").grid(row=1, column=3, padx=(5, 0))
 
-        # Confirm 버튼
+        # Default Grid File 입력 필드
+        tk.Label(size_frame, text='Default Footprint Grid:').grid(row=2, column=0, padx=(0, 5), pady=(10,0))
+        grid_file_entry = tk.Entry(size_frame, width = 10)
+        grid_file_entry.insert(0, str(read_str_value_of('config.ini', 'FileSettings', 'default_grid_file')))
+        grid_file_entry.grid(row=2, column=1, pady=(10, 0))
 
+        # Confirm 버튼
         tk.Button(dialog, text='Confirm', command=on_confirm).pack(pady=30)
         dialog.transient(self.root)
 
     def create_grid_structure(self):
         """Canvas에 행렬 크기에 맞게 셀을 생성합니다."""
         self.canvas.delete("all")  # 기존 그리드 제거
-        width, height = self.cols * self.cell_size, self.rows * self.cell_size
+        width, height = self.cols * self.pixel_size, self.rows * self.pixel_size
         self.canvas.config(width=width, height=height)
 
         # 셀 생성
         self.cells = {}
         for row in range(self.rows):
             for col in range(self.cols):
-                x1 = col * self.cell_size
-                y1 = row * self.cell_size
-                x2 = x1 + self.cell_size
-                y2 = y1 + self.cell_size
+                x1 = col * self.pixel_size
+                y1 = row * self.pixel_size
+                x2 = x1 + self.pixel_size
+                y2 = y1 + self.pixel_size
                 cell_id = self.canvas.create_rectangle(x1, y1, x2, y2, fill=self.default_color)
                 self.cells[(row, col)] = cell_id
+
 
     def update_grid_display(self):
         for row in range(self.rows):
@@ -147,38 +156,33 @@ class GridGenerator:
                     self.canvas.itemconfig(cell_id, fill=color)
 
     def on_press(self, event):
-        # 드래그 시작 위치 설정
-        self.start_pos = (event.y // self.cell_size, event.x // self.cell_size)  # 행, 열 순서로 저장
+        # 드래그 시작 위치 설정 및 하이라이트 초기화
+        self.start_pos = (event.y // self.pixel_size, event.x // self.pixel_size)
         self.clear_highlight()
-
+        self.highlighted_cells.clear()  # 드래그 시작 시 하이라이트된 셀 초기화
 
     def on_drag(self, event):
         # 드래그 중 마우스가 지나가는 셀들을 하이라이트
-        end_col, end_row = event.y // self.cell_size, event.x // self.cell_size
+        end_row, end_col = event.y // self.pixel_size, event.x // self.pixel_size
         self.highlight_cells(self.start_pos, (end_row, end_col))
 
     def on_release(self, event):
-        # 드래그 종료 시 영역 내의 셀들을 토글
-        end_pos = (event.y // self.cell_size, event.x // self.cell_size)  # 행, 열 순서로 저장
+        # 드래그가 끝난 후 하이라이트된 셀들만 선택된 상태로 변경
+        for row, col in self.highlighted_cells:
+            if 0 <= row < self.rows and 0 <= col < self.cols:
+                self.matrix[row][col] = 1  # 선택된 셀의 값을 1로 설정
+                cell_id = self.cells.get((row, col))
+                if cell_id:
+                    self.canvas.itemconfig(cell_id, fill=self.selected_color)  # 색상 업데이트
 
-        # 토글 및 색상 업데이트
-        if self.start_pos:
-            start_row, start_col = self.start_pos
-            end_row, end_col = end_pos
-
-            # 드래그 범위 내 모든 셀 토글
-            for row in range(min(start_row, end_row), max(start_row, end_row) + 1):
-                for col in range(min(start_col, end_col), max(start_col, end_col) + 1):
-                    if 0 <= row < self.rows and 0 <= col < self.cols:
-                        self.toggle_cell_by_position(row, col)
-
-            self.clear_highlight()
-            self.start_pos = None
+        # 초기화
+        self.highlighted_cells.clear()
+        self.start_pos = None
 
     def highlight_cells(self, start_pos, end_pos):
-        """주어진 두 위치 사이의 셀들을 하이라이트합니다."""
-        start_col, start_row = start_pos
-        end_col, end_row = end_pos
+        """주어진 두 위치 사이의 셀들을 하이라이트하고 추적합니다."""
+        start_row, start_col = start_pos
+        end_row, end_col = end_pos
 
         # 드래그 범위 내 모든 셀을 하이라이트
         for row in range(min(start_row, end_row), max(start_row, end_row) + 1):
@@ -186,6 +190,7 @@ class GridGenerator:
                 if 0 <= row < self.rows and 0 <= col < self.cols:
                     cell_id = self.cells[(row, col)]
                     self.canvas.itemconfig(cell_id, fill=self.highlight_color)
+                    self.highlighted_cells.add((row, col))  # 하이라이트된 셀 좌표 추가
 
     def clear_highlight(self):
         """하이라이트된 셀을 기본 색으로 초기화합니다."""

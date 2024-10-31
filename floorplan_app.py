@@ -19,6 +19,7 @@ from ga import GeneticAlgorithm
 from floorplanlogic import FloorplanLogic
 from plan_utils import grid_to_coordinates
 from reqs import Req
+from GridGenerator import GridGenerator
 from config_reader import load_config
 import configparser
 # Press Ctrl+F5 to execute it or replace it with your code.
@@ -38,16 +39,46 @@ class FloorplanApp:
         self.reqs = Req()
         self.FL = FloorplanLogic(self.options.num_rooms)
         self.create_widgets()
+
+        # config.ini 파일에서 기본 그리드 파일 경로 가져오기
+        self.default_grid_file = self.load_default_grid_file()
+        # 초기 화면에 .grd 파일 불러오기
+        if self.default_grid_file:
+            self.load_grid_file(self.default_grid_file)
+        else:
+            print("No default grid file found.")
+
         self.seed_iteration = 0
         self.current_seed = None
         self.current_floorplan=None
         self.current_fit = None
         self.path = None
+    def load_default_grid_file(self):
+        """config.ini 파일에서 기본 그리드 파일 경로를 불러옵니다."""
+        config = configparser.ConfigParser()
+        config.read('config.ini')
+        return config.get('FileSettings', 'default_grid_file', fallback=None)
+
+    def load_grid_file(self, file_path):
+        """주어진 .grd 파일을 불러와 초기 화면에 표시합니다."""
+        try:
+            # .grd 파일을 numpy 배열로 불러오기
+            grid_data = GridGenerator.load_grid_as_np(file_path)
+            if grid_data is not None:
+                init_grid = np.where(grid_data == 1, 3, 0) # room 색상이 1이면 빨간색이라 15번 색으로 바꿈
+                fig = GridDrawer.color_cells_by_value(init_grid, 'init_grid', num_rooms=self.options.num_rooms, colorbar=False)
+                self.show_plot_on_canvas(fig, self.initial_canvas)
+                # self.draw_on_canvas(self.current_floorplan, self.initial_canvas)
+
+            else:
+                messagebox.showerror("Error", f'Failed to load grid data from file.{file_path}')
+        except Exception as e:
+            messagebox.showerror("Error", f"An error occurred while loading the grid file {file_path}: {e}")
 
     def create_widgets(self):
         # 왼쪽 프레임 생성 및 배치 (메뉴 버튼을 위한 프레임)
         left_frame = tk.Frame(self.root)
-        left_frame.pack(side=tk.LEFT, fill=tk.Y)
+        left_frame.pack(side=tk.LEFT, fill=tk.Y, padx=30)
 
         # 오른쪽 메인 프레임 생성 및 배치 (캔버스와 피트니스 프레임을 포함)
         main_frame = tk.Frame(self.root)
@@ -140,6 +171,14 @@ class FloorplanApp:
         self.save_floorplan_button.pack(side=tk.LEFT, padx=10)  # 수평 배열을 위해 side=tk.LEFT 사용
         self.save_floorplan_button.config(state=tk.DISABLED)  # 첫 시작에는 비활성화
 
+        self.save_dxf_button = ttk.Button(button_frame, text="Save as DXF File", command = self.save_dxf)
+        self.save_dxf_button.pack(side = tk.LEFT, padx = 10)
+        self.save_dxf_button.config(state = tk.DISABLED)
+
+        # 상태 표시 레이블 (진행 상태 업데이트용)
+        self.status_label = tk.Label(self.root, text="Status: Ready", font=("Arial", 10), fg="blue")
+        self.status_label.pack(side=tk.BOTTOM, pady=5)  # 창 하단에 배치
+
     def save_seed(self):
         # 사용자가 파일 저장 위치와 이름을 지정할 수 있는 다이얼로그 열기
         file_path = filedialog.asksaveasfilename(
@@ -181,19 +220,19 @@ class FloorplanApp:
         else:
             print("No file selected.")  # 사용자가 파일 선택을 취소한 경우
 
-    def save_floorplan(self):
-        file_path = filedialog.asksaveasfilename(
-            title="Save Floorplan File",
-            filetypes=[("Numpy files", "*.npy")],  # 저장 가능한 파일 형식 지정
-            defaultextension=".npy"  # 기본 파일 확장자 설정
-        )
-        # 파일 경로가 제공되면 해당 위치에 파일 저장
-        if file_path:
-            full_path = f"{file_path}.npy"  # 파일 이름에 날짜와 시간을 추가
-            np.save(full_path, self.current_floorplan)  # 파일 저장
-            messagebox.showwarning(f"Seed saved to {full_path}")  # 저장된 경로 출력
-        else:
-            messagebox.showwarning("Save operation cancelled.")  # 사용자가 취소했을 경우
+    # def save_floorplan(self):
+    #     file_path = filedialog.asksaveasfilename(
+    #         title="Save Floorplan File",
+    #         filetypes=[("Numpy files", "*.npy")],  # 저장 가능한 파일 형식 지정
+    #         defaultextension=".npy"  # 기본 파일 확장자 설정
+    #     )
+    #     # 파일 경로가 제공되면 해당 위치에 파일 저장
+    #     if file_path:
+    #         full_path = f"{file_path}.npy"  # 파일 이름에 날짜와 시간을 추가
+    #         np.save(full_path, self.current_floorplan)  # 파일 저장
+    #         messagebox.showwarning(f"Seed saved to {full_path}")  # 저장된 경로 출력
+    #     else:
+    #         messagebox.showwarning("Save operation cancelled.")  # 사용자가 취소했을 경우
 
 
     def save_floorplan(self):
@@ -234,6 +273,16 @@ class FloorplanApp:
         else:
             print("Save operation cancelled.")
 
+
+    def save_dxf(self):
+        file_path = filedialog.asksaveasfilename(
+            title='Save Floorplan as dxf File',
+            filetype = [('Dxf files','*.dxf')],
+            defaultextension='.dxf'
+        )
+
+        if file_path:
+            full_path = f'{file_path}.dxf'
 
     def load_floorplan(self):
         # 파일 오픈 다이얼로그를 사용하여 로드할 파일 선택
@@ -281,7 +330,8 @@ class FloorplanApp:
         if self.options.silence_mode:
             floorplan = self.run_best_floorplan_silence()
         else:
-            self.run_best_floorplan()
+            self.run_best_floorplan_async()
+
     def run_iteration(self):
         def generate_average_fitness_text(fits):
             # 2. 고유 식별자를 사용해 결과 저장
@@ -400,8 +450,12 @@ class FloorplanApp:
             new_seed, _ = self.create_room_start_cell()
             floorplans = self.FL.repeate_creating_floorplan(repeatation=n_iter, seed=new_seed, options=self.options, reqs=self.reqs)
 
-            self.fitness_label.config(text="Batch processing complete.")
-            self.ok_button.config(state=tk.DISABLED)
+            # 현재 상태를 업데이트
+            self.status_label.config(text=f"Iteration: {num_iter} / Fit: {best_fit_value:.4f}")
+            self.root.update_idletasks()  # UI 즉시 업데이트
+
+            # self.fitness_label.config(text="Batch processing complete.")
+            # self.ok_button.config(state=tk.DISABLED)
 
             fits = [fl[1] for fl in floorplans]  # 모든 fitness들을 가져와서
             weighted_fit = [fit.fitness for fit in fits]
@@ -419,6 +473,10 @@ class FloorplanApp:
             num_iter += 1
             print(f'num_iter = {num_iter}')
 
+            # 최종 결과 업데이트
+            self.status_label.config(text=f"Completed: Best Fit Value: {best_fit_value:.4f}")
+            self.root.update_idletasks()
+
         if saved_best_fit is None: # last modified fitnesses and floorplan
             saved_best_fit = best_fit
             saved_best_floorplan = best_fit_floorplan
@@ -426,18 +484,55 @@ class FloorplanApp:
             print(f'impossible occasion but happend')
 
         average_text_result = self.FL.generate_average_fitness_text(fits)
-        average_text_result = f'Average Fitness Result \n {average_text_result}'
-        self.fitness_label.config(text=average_text_result)
-
+        self.fitness_label.config(text=f'Average Fitness Result \n {average_text_result}')
         best_fit_result = create_fitness_info(saved_best_fit)
-        best_fit_result = f'Best Fitness Result\n{best_fit_result}'
-        self.best_fitness_label.config(text=best_fit_result)
+        self.best_fitness_label.config(text=f'Best Fitness Result\n{best_fit_result}')
+        room_areas = [room.area for room in saved_best_fit.room_polygons.values()]
+        self.draw_on_canvas_metrics(saved_best_floorplan, room_areas, self.final_canvas)
 
-        self.draw_on_canvas_metrics(saved_best_floorplan, room_areas, self.final_canvas)  # info best
 
         return floorplans
-
         # self.draw_on_canvas(self.seed, self.initial_canvas)
+
+    def run_best_floorplan_async(self, num_iter=0, best_fit_value=0.0, saved_best_fit=None, saved_best_floorplan=None,
+                                 saved_fits=None):
+        if best_fit_value < self.options.threshold_optimal and num_iter < self.options.max_num_floorplan_generation:
+            new_seed, _ = self.create_room_start_cell()
+            floorplans = self.FL.repeate_creating_floorplan(
+                repeatation=self.options.iteration_from_seed,
+                seed=new_seed,
+                options=self.options,
+                reqs=self.reqs
+            )
+
+            self.status_label.config(text=f"Iteration: {num_iter} / Fit: {best_fit_value:.4f}")
+            self.root.update_idletasks()
+
+            fits = [fl[1] for fl in floorplans]
+            weighted_fit = [fit.fitness for fit in fits]
+            best_fits_index = np.argmax(weighted_fit)
+            best_fit = floorplans[best_fits_index][1]
+            best_fit_floorplan = floorplans[best_fits_index][0]
+
+            if best_fit_value < best_fit.fitness:
+                best_fit_value = best_fit.fitness
+                saved_best_fit = best_fit
+                saved_best_floorplan = best_fit_floorplan
+                saved_fits = fits
+
+            # 다음 반복 실행
+            self.root.after(100, self.run_best_floorplan_async, num_iter + 1, best_fit_value, saved_best_fit,
+                            saved_best_floorplan, saved_fits)
+        else:
+            # 최종 완료 상태 표시 및 결과 업데이트
+            self.status_label.config(text=f"Completed: Best Fit Value: {best_fit_value:.4f}")
+            average_text_result = self.FL.generate_average_fitness_text(saved_fits)
+            self.fitness_label.config(text=f'Average Fitness Result \n {average_text_result}')
+            best_fit_result = create_fitness_info(saved_best_fit)
+            self.best_fitness_label.config(text=f'Best Fitness Result\n{best_fit_result}')
+            room_areas = [room.area for room in saved_best_fit.room_polygons.values()]
+            self.draw_on_canvas_metrics(saved_best_floorplan, room_areas, self.final_canvas)
+
     def next_iteration(self):
         self.seed_iteration += 1
         self.run_iteration()
@@ -590,7 +685,7 @@ class FloorplanApp:
 
     def draw_on_canvas (self, floorplan, canvas): # draw on the canvas
         if floorplan is not None:
-            fig = GridDrawer.color_cells_by_value(floorplan, self.path, display=False, save=True, num_rooms = self.options.num_rooms)
+            fig = GridDrawer.color_cells_by_value(floorplan, 'init_grid', num_rooms = self.options.num_rooms)
             self.show_plot_on_canvas(fig, canvas)
         else:
             messagebox.showwarning("Warning", "Create Floorplan First")

@@ -507,7 +507,7 @@ class GridDrawer:
         plt.close()
 
     @staticmethod
-    def color_cells_by_value(grid, filename, text=None, display=True, save=True, num_rooms = 8):
+    def color_cells_by_value(grid, filename, text=None, display=True, save=True, num_rooms = 8, colorbar=True):
 
         # Function to generate boundaries based on the number of rooms
         def generate_boundaries(num_rooms):
@@ -580,8 +580,9 @@ class GridDrawer:
         tick_labels =  [str(i) for i in list(range(1, num_rooms+3))]
         tick_labels = [room_names.get(i, str(i)) for i in ticks]
 
-        colorbar = fig.colorbar(cax, shrink=0.8, ticks=ticks)
-        colorbar.set_ticklabels(tick_labels)
+        if colorbar:
+            colorbar = fig.colorbar(cax, shrink=0.8, ticks=ticks)
+            colorbar.set_ticklabels(tick_labels)
 
         # 하단 여백을 조정하여 텍스트를 추가할 공간 확보
         plt.subplots_adjust(bottom=0.2)
